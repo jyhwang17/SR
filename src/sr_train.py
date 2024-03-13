@@ -9,16 +9,9 @@ import copy
 from argparse import Namespace
 from tqdm import tqdm
 from model.sasrec import SASREC
-from model.sasrecs import SASRECS
-from model.sasrecm import SASRECM
-from model.sasrecm2 import SASRECM2
 from model.bert4rec import BERT4REC
-from model.bert4recm2 import BERT4RECM2
 from model.hgn import HGN
 from model.fmlp import FMLP
-from model.c2dsr import C2DSR
-from model.unicdrseq import UniCDRSEQ
-from model.dream import DREAM
 import sys
 from utils.loader_utils import SEQDataset
 from utils.eval_utils import evaluate_topk
@@ -76,28 +69,12 @@ item2dom = torch.LongTensor(dataset.item2dom).cuda()
 
 if args.model == 'sasrec':
     model = SASREC(args).cuda()
-if args.model == 'sasrecm':
-    model = SASRECM(args).cuda()
-if args.model == 'sasrecm2':
-    model = SASRECM2(args).cuda()
-if args.model == 'sasrecs':
-    model = SASRECS(args).cuda()
-elif args.model == 'sasrecm2':
-    model = SASRECM2(args).cuda() 
 elif args.model == 'bert4rec':
     model = BERT4REC(args).cuda()
-elif args.model == 'bert4recm2':
-    model = BERT4RECM2(args).cuda()    
 elif args.model == 'fmlp':
     model = FMLP(args).cuda()
 elif args.model == 'hgn':
     model = HGN(args).cuda()
-elif args.model == 'unicdrseq':
-    model = UniCDRSEQ(args).cuda()
-elif args.model == 'c2dsr':
-    model = C2DSR(args).cuda()
-elif args.model == 'dream':
-    model = DREAM(args).cuda()
 
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
