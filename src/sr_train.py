@@ -38,7 +38,7 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['c2dsr','sasrec','sasrecs','hgn','dream','bert4rec','fmlp','unicdrseq','bert4recm2','sasrecm','sasrecm2'],default='bert4rec')
+parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp'],default='bert4rec')
 parser.add_argument("--dropout",type=float,default=0.1,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
 parser.add_argument("--encoder_layers", type=int, default=2, help="# of encoder layers")
@@ -78,6 +78,7 @@ elif args.model == 'hgn':
 
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
+
 best_valid_ndcg = defaultdict(int)
 best_valid_mrr = defaultdict(int)
 best_valid_recall = defaultdict(int)
@@ -100,7 +101,7 @@ for epoch in range(1,args.max_epoch+1):
         sequence = batch_instance[:,P[0]:P[1]].cuda()
         positive = batch_instance[:,P[1]:P[2]].cuda()
         sorted_sequence = batch_instance[:,P[2]:].cuda()
-        if args.model == 'sasrec' or args.model == 'sasrecm' or args.model == 'sasrecs' or args.model == 'sasrecm2' or args.model=='hgn' or args.model == 'fmlp' or args.model == 'unicdrseq' :
+        if args.model == 'sasrec'or args.model=='hgn' or args.model == 'fmlp' :
             negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.window_length) # B,L
         else:
             negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
@@ -119,7 +120,9 @@ for epoch in range(1,args.max_epoch+1):
 
     model.eval()
     if epoch %2==0 or True:
-        args.num_domains
+        # Validation
+        
+        '''
         for target_domain in range(1,args.num_domains):
             
             valid_seqs = torch.arange(dataset.num_seqs)
@@ -130,11 +133,6 @@ for epoch in range(1,args.max_epoch+1):
             valid_seqs = torch.arange(dataset.num_seqs)
             valid_domains = dataset.valid_domains
             valid_type = dataset.cd_type
-
-            cross_valid_seqs = valid_seqs[(valid_domains == target_domain ).flatten() & (valid_type==2).flatten()]
-            intra_valid_seqs = valid_seqs[(valid_domains == target_domain ).flatten() & (valid_type==1).flatten()]
-            cross_result = evaluate_domain_topk(model, cross_valid_seqs, dataset, target_domain, 'valid', 'eval', 10)
-            intra_result = evaluate_domain_topk(model, intra_valid_seqs, dataset, target_domain, 'valid', 'eval', 10)
             
             if args.mode == 'develop':
                 print("Validation")
@@ -143,242 +141,14 @@ for epoch in range(1,args.max_epoch+1):
                 print("[%s/%s][ndcg  ]@10:: %.4lf"%(epoch,args.max_epoch,result["ndcg"]))
                 print("[%s/%s][mrr   ]@10:: %.4lf"%(epoch,args.max_epoch,result["mrr"]))
 
-                print("--cross--")
-                print("[%s/%s][recall]@10:: %.4lf"%(epoch,args.max_epoch,cross_result["recall"]))
-                print("[%s/%s][ndcg  ]@10:: %.4lf"%(epoch,args.max_epoch,cross_result["ndcg"]))
-                print("[%s/%s][mrr   ]@10:: %.4lf"%(epoch,args.max_epoch,cross_result["mrr"]))
-                
-                print("--intra--")
-                print("[%s/%s][recall]@10:: %.4lf"%(epoch,args.max_epoch,intra_result["recall"]))
-                print("[%s/%s][ndcg  ]@10:: %.4lf"%(epoch,args.max_epoch,intra_result["ndcg"]))
-                print("[%s/%s][mrr   ]@10:: %.4lf"%(epoch,args.max_epoch,intra_result["mrr"]))
-
             if result["ndcg"] >= best_valid_ndcg[target_domain]:
-                best_valid_ndcg[target_domain] = result["ndcg"]
-                best_valid_recall[target_domain] = result["recall"]
-                best_valid_mrr[target_domain] = result["mrr"]
 
-                best_epoch[target_domain] = epoch
-                model_state[target_domain] = copy.deepcopy(model.state_dict())
-                
-                #Test
-                #config
-                test_seqs = torch.arange(dataset.num_seqs)
-                test_domains = dataset.test_domains
-                test_seqs = test_seqs[(test_domains == target_domain ).flatten()]           
-                test_type = dataset.cd_type
-                
-                result50 = evaluate_domain_topk(model, test_seqs, dataset, target_domain, 'test', 'eval', 50)
-                result20 = evaluate_domain_topk(model, test_seqs, dataset, target_domain, 'test', 'eval', 20)
-                result10 = evaluate_domain_topk(model, test_seqs, dataset, target_domain, 'test', 'eval', 10)
-                result5 = evaluate_domain_topk(model, test_seqs, dataset, target_domain, 'test', 'eval', 5)
-                result1 = evaluate_domain_topk(model, test_seqs, dataset, target_domain, 'test', 'eval', 1)
-
-                test_seqs = torch.arange(dataset.num_seqs)
-                cross_test_seqs = test_seqs[(test_domains == target_domain).flatten() & (test_type==2).flatten()]
-                intra_test_seqs = test_seqs[(test_domains == target_domain).flatten() & (test_type==1).flatten()]
-                cross_result50 = evaluate_domain_topk(model, cross_test_seqs, dataset, target_domain, 'test', 'eval', 50)
-                cross_result20 = evaluate_domain_topk(model, cross_test_seqs, dataset, target_domain, 'test', 'eval', 20)
-                cross_result10 = evaluate_domain_topk(model, cross_test_seqs, dataset, target_domain, 'test', 'eval', 10)
-                cross_result5 = evaluate_domain_topk(model, cross_test_seqs, dataset, target_domain, 'test', 'eval', 5)
-                cross_result1 = evaluate_domain_topk(model, cross_test_seqs, dataset, target_domain, 'test', 'eval', 1)
-                intra_result50 = evaluate_domain_topk(model, intra_test_seqs, dataset, target_domain, 'test', 'eval', 50)
-                intra_result20 = evaluate_domain_topk(model, intra_test_seqs, dataset, target_domain, 'test', 'eval', 20)
-                intra_result10 = evaluate_domain_topk(model, intra_test_seqs, dataset, target_domain, 'test', 'eval', 10)
-                intra_result5 = evaluate_domain_topk(model, intra_test_seqs, dataset, target_domain, 'test', 'eval', 5)
-                intra_result1 = evaluate_domain_topk(model, intra_test_seqs, dataset, target_domain, 'test', 'eval', 1)
-                
-                
-                #Test according to the position
-                test_seqs = torch.arange(dataset.num_seqs)
-                test_domains = dataset.test_domains         
-                test_type = dataset.test_position_type 
-                
-                test_pos_seqs1 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type<=1)).flatten()]
-                test_pos_seqs3 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type<=3)).flatten()]
-                test_pos_seqs5 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type<=5)).flatten()]
-                test_pos_seqs10 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type<=10)).flatten()]
-                test_pos_seqs20 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type<=20)).flatten()]
-                
-                pos_result1 = evaluate_domain_topk(model, test_pos_seqs1, dataset, target_domain, 'test', 'eval', 20)
-                pos_result3 = evaluate_domain_topk(model, test_pos_seqs3, dataset, target_domain, 'test', 'eval', 20)
-                pos_result5 = evaluate_domain_topk(model, test_pos_seqs5, dataset, target_domain, 'test', 'eval', 20)
-                pos_result10 = evaluate_domain_topk(model, test_pos_seqs10, dataset, target_domain, 'test', 'eval', 20)
-                pos_result20 = evaluate_domain_topk(model, test_pos_seqs20, dataset, target_domain, 'test', 'eval', 20)
-                #Test according to the sparseness
-                test_seqs = torch.arange(dataset.num_seqs)
-                test_domains = dataset.test_domains          
-                test_type = dataset.test_sparse_type
-                
-                test_sparse_seqs1 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type < 1)).flatten()]
-                test_sparse_seqs3 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type < 3)).flatten()]
-                test_sparse_seqs5 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type < 5)).flatten()]
-                test_sparse_seqs10 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type < 10)).flatten()]
-                test_sparse_seqs20 = test_seqs[(test_domains == target_domain).flatten() &
-                                           ((test_type!=-1)&(test_type < 20)).flatten()]
-                
-                sparse_result1 = evaluate_domain_topk(model, test_sparse_seqs1, dataset, target_domain, 'test', 'eval', 20)
-                sparse_result3 = evaluate_domain_topk(model, test_sparse_seqs3, dataset, target_domain, 'test', 'eval', 20)
-                sparse_result5 = evaluate_domain_topk(model, test_sparse_seqs5, dataset, target_domain, 'test', 'eval', 20)
-                sparse_result10 = evaluate_domain_topk(model, test_sparse_seqs10, dataset, target_domain, 'test', 'eval', 20)
-                sparse_result20 = evaluate_domain_topk(model, test_sparse_seqs20, dataset, target_domain, 'test', 'eval', 20)
-                
-                
-                best_test_recall[str(target_domain)+"total"+"50"] = result50["recall"]
-                best_test_recall[str(target_domain)+"total"+"20"] = result20["recall"]
-                best_test_recall[str(target_domain)+"total"+"10"] = result10["recall"]
-                best_test_recall[str(target_domain)+"total"+"5"] = result5["recall"]
-                best_test_recall[str(target_domain)+"total"+"1"] = result1["recall"]
-
-                best_test_ndcg[str(target_domain)+"total"+"50"] = result50["ndcg"]
-                best_test_ndcg[str(target_domain)+"total"+"20"] = result20["ndcg"]
-                best_test_ndcg[str(target_domain)+"total"+"10"] = result10["ndcg"]
-                best_test_ndcg[str(target_domain)+"total"+"5"] = result5["ndcg"]
-                best_test_ndcg[str(target_domain)+"total"+"1"] = result1["ndcg"]
-
-                best_test_mrr[str(target_domain)+"total"+"50"] = result50["mrr"]
-                best_test_mrr[str(target_domain)+"total"+"20"] = result20["mrr"]
-                best_test_mrr[str(target_domain)+"total"+"10"] = result10["mrr"]
-                best_test_mrr[str(target_domain)+"total"+"5"] = result5["mrr"]
-                best_test_mrr[str(target_domain)+"total"+"1"] = result1["mrr"]
-                
-                #cross-domain-transition
-                best_test_recall[str(target_domain)+"cross"+"50"] = cross_result50["recall"]
-                best_test_recall[str(target_domain)+"cross"+"20"] = cross_result20["recall"]
-                best_test_recall[str(target_domain)+"cross"+"10"] = cross_result10["recall"]
-                best_test_recall[str(target_domain)+"cross"+"5"] = cross_result5["recall"]
-                best_test_recall[str(target_domain)+"cross"+"1"] = cross_result1["recall"]
-                best_test_ndcg[str(target_domain)+"cross"+"50"] = cross_result50["ndcg"]
-                best_test_ndcg[str(target_domain)+"cross"+"20"] = cross_result20["ndcg"]
-                best_test_ndcg[str(target_domain)+"cross"+"10"] = cross_result10["ndcg"]
-                best_test_ndcg[str(target_domain)+"cross"+"5"] = cross_result5["ndcg"]
-                best_test_ndcg[str(target_domain)+"cross"+"1"] = cross_result1["ndcg"]
-                best_test_mrr[str(target_domain)+"cross"+"50"] = cross_result50["mrr"]
-                best_test_mrr[str(target_domain)+"cross"+"20"] = cross_result20["mrr"]
-                best_test_mrr[str(target_domain)+"cross"+"10"] = cross_result10["mrr"]
-                best_test_mrr[str(target_domain)+"cross"+"5"] = cross_result5["mrr"]
-                best_test_mrr[str(target_domain)+"cross"+"1"] = cross_result1["mrr"]
-                #intra-transition
-                best_test_recall[str(target_domain)+"intra"+"50"] = intra_result50["recall"]
-                best_test_recall[str(target_domain)+"intra"+"20"] = intra_result20["recall"]
-                best_test_recall[str(target_domain)+"intra"+"10"] = intra_result10["recall"]
-                best_test_recall[str(target_domain)+"intra"+"5"] = intra_result5["recall"]
-                best_test_recall[str(target_domain)+"intra"+"1"] = intra_result1["recall"]
-                
-                best_test_ndcg[str(target_domain)+"intra"+"50"] = intra_result50["ndcg"]
-                best_test_ndcg[str(target_domain)+"intra"+"20"] = intra_result20["ndcg"]
-                best_test_ndcg[str(target_domain)+"intra"+"10"] = intra_result10["ndcg"]
-                best_test_ndcg[str(target_domain)+"intra"+"5"] = intra_result5["ndcg"]
-                best_test_ndcg[str(target_domain)+"intra"+"1"] = intra_result1["ndcg"]
-
-                best_test_mrr[str(target_domain)+"intra"+"50"] = intra_result50["mrr"]
-                best_test_mrr[str(target_domain)+"intra"+"20"] = intra_result20["mrr"]
-                best_test_mrr[str(target_domain)+"intra"+"10"] = intra_result10["mrr"]
-                best_test_mrr[str(target_domain)+"intra"+"5"] = intra_result5["mrr"]
-                best_test_mrr[str(target_domain)+"intra"+"1"] = intra_result1["mrr"]
-                
-                
-                #Position -aware evaluation
-                best_test_ndcg[str(target_domain)+"pos"+"1"] = pos_result1["ndcg"]
-                best_test_ndcg[str(target_domain)+"pos"+"3"] = pos_result3["ndcg"]
-                best_test_ndcg[str(target_domain)+"pos"+"5"] = pos_result5["ndcg"]
-                best_test_ndcg[str(target_domain)+"pos"+"10"] = pos_result10["ndcg"]
-                best_test_ndcg[str(target_domain)+"pos"+"20"] = pos_result20["ndcg"]
-                
-                best_test_mrr[str(target_domain)+"pos"+"1"] = pos_result1["mrr"]
-                best_test_mrr[str(target_domain)+"pos"+"3"] = pos_result3["mrr"]
-                best_test_mrr[str(target_domain)+"pos"+"5"] = pos_result5["mrr"]
-                best_test_mrr[str(target_domain)+"pos"+"10"] = pos_result10["mrr"]
-                best_test_mrr[str(target_domain)+"pos"+"20"] = pos_result20["mrr"]
-                
-                #sparse -aware evaluation
-                best_test_ndcg[str(target_domain)+"sparse"+"1"] = sparse_result1["ndcg"]
-                best_test_ndcg[str(target_domain)+"sparse"+"3"] = sparse_result3["ndcg"]
-                best_test_ndcg[str(target_domain)+"sparse"+"5"] = sparse_result5["ndcg"]
-                best_test_ndcg[str(target_domain)+"sparse"+"10"] = sparse_result10["ndcg"]
-                best_test_ndcg[str(target_domain)+"sparse"+"20"] = sparse_result20["ndcg"]
-                
-                best_test_mrr[str(target_domain)+"sparse"+"1"] = sparse_result1["mrr"]
-                best_test_mrr[str(target_domain)+"sparse"+"3"] = sparse_result3["mrr"]
-                best_test_mrr[str(target_domain)+"sparse"+"5"] = sparse_result5["mrr"]
-                best_test_mrr[str(target_domain)+"sparse"+"10"] = sparse_result10["mrr"]
-                best_test_mrr[str(target_domain)+"sparse"+"20"] = sparse_result20["mrr"]
-                
         if args.mode == 'develop': #and epoch % 5 ==0:
-            for target_domain in range(1,args.num_domains):
-                print("Domain:%s"%(target_domain))
-                print("Best_epoch:%s"%(best_epoch[target_domain]))
-                print("[valid][recall]@10:: %.4lf"%(best_valid_recall[target_domain]))
-                print("[valid][ndcg  ]@10:: %.4lf"%(best_valid_ndcg[target_domain]))
-                print("[valid][mrr   ]@10:: %.4lf"%(best_valid_mrr[target_domain]))
-                print("Domain:%s"%(target_domain))
-                print("Best_epoch:%s"%(best_epoch[target_domain]))
-                print("[test][recall]@50:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"50"],best_test_recall[str(target_domain)+"cross"+"50"],best_test_recall[str(target_domain)+"intra"+"50"]))
-                print("[test][ndcg  ]@50:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"50"],best_test_ndcg[str(target_domain)+"cross"+"50"],best_test_ndcg[str(target_domain)+"intra"+"50"]))
-                print("[test][mrr   ]@50:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"50"],best_test_mrr[str(target_domain)+"cross"+"50"],best_test_mrr[str(target_domain)+"intra"+"50"]))
-
-                print("[test][recall]@20:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"20"],best_test_recall[str(target_domain)+"cross"+"20"],best_test_recall[str(target_domain)+"intra"+"20"]))
-                print("[test][ndcg  ]@20:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"20"],best_test_ndcg[str(target_domain)+"cross"+"20"],best_test_ndcg[str(target_domain)+"intra"+"20"]))
-                print("[test][mrr   ]@20:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"20"],best_test_mrr[str(target_domain)+"cross"+"20"],best_test_mrr[str(target_domain)+"intra"+"20"]))
-
-                print("[test][recall]@10:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"10"],best_test_recall[str(target_domain)+"cross"+"10"],best_test_recall[str(target_domain)+"intra"+"10"]))
-                print("[test][ndcg  ]@10:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"10"],best_test_ndcg[str(target_domain)+"cross"+"10"],best_test_ndcg[str(target_domain)+"intra"+"10"]))
-                print("[test][mrr   ]@10:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"10"],best_test_mrr[str(target_domain)+"cross"+"10"],best_test_mrr[str(target_domain)+"intra"+"10"]))
-
-                print("[test][recall]@5:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"5"],best_test_recall[str(target_domain)+"cross"+"5"],best_test_recall[str(target_domain)+"intra"+"5"]))
-                print("[test][ndcg  ]@5:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"5"],best_test_ndcg[str(target_domain)+"cross"+"5"],best_test_ndcg[str(target_domain)+"intra"+"5"]))
-                print("[test][mrr   ]@5:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"5"],best_test_mrr[str(target_domain)+"cross"+"5"],best_test_mrr[str(target_domain)+"intra"+"5"]))
-
-                print("[test][recall]@1:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"1"],best_test_recall[str(target_domain)+"cross"+"1"],best_test_recall[str(target_domain)+"intra"+"1"]))
-                print("[test][ndcg  ]@1:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"1"],best_test_ndcg[str(target_domain)+"cross"+"1"],best_test_ndcg[str(target_domain)+"intra"+"1"]))
-                print("[test][mrr   ]@1:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"1"],best_test_mrr[str(target_domain)+"cross"+"1"],best_test_mrr[str(target_domain)+"intra"+"1"]))
-                print("[test][position-ndcg]@20:: [%.4lf,%.4lf,%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"pos"+"1"],best_test_ndcg[str(target_domain)+"pos"+"3"],best_test_ndcg[str(target_domain)+"pos"+"5"],best_test_ndcg[str(target_domain)+"pos"+"10"],best_test_ndcg[str(target_domain)+"pos"+"20"]))
-                print("[test][sparse-ndcg]@20:: [%.4lf,%.4lf,%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"sparse"+"1"],best_test_ndcg[str(target_domain)+"sparse"+"3"],best_test_ndcg[str(target_domain)+"sparse"+"5"],best_test_ndcg[str(target_domain)+"sparse"+"10"],best_test_ndcg[str(target_domain)+"sparse"+"20"]))
-                
+        '''
 if args.mode == 'tune':
     print(args)
     objs = {"hyperparams": args}
-    for target_domain in range(1,args.num_domains):
-        with open('./knowledge/'+'%s'%(args.dataset)+'/'+'%s'%(target_domain)+'/hyperparams/'+'%s_%s-%s_%.4lf'%(args.model, args.window_length, args.dims, float(best_valid_ndcg[target_domain]))+'.pkl','wb') as f:
-            pickle.dump(objs, f)
-            print("Domain:%s"%(target_domain))
-            print("Best_epoch:%s"%(best_epoch[target_domain]))
-            print("[valid][recall]@10:: %.4lf"%(best_valid_recall[target_domain]))
-            print("[valid][ndcg  ]@10:: %.4lf"%(best_valid_ndcg[target_domain]))
-            print("[valid][mrr   ]@10:: %.4lf"%(best_valid_mrr[target_domain]))
-            print("Domain:%s"%(target_domain))
-            print("Best_epoch:%s"%(best_epoch[target_domain]))
-            print("[test][recall]@50:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"50"],best_test_recall[str(target_domain)+"cross"+"50"],best_test_recall[str(target_domain)+"intra"+"50"]))
-            print("[test][ndcg  ]@50:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"50"],best_test_ndcg[str(target_domain)+"cross"+"50"],best_test_ndcg[str(target_domain)+"intra"+"50"]))
-            print("[test][mrr   ]@50:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"50"],best_test_mrr[str(target_domain)+"cross"+"50"],best_test_mrr[str(target_domain)+"intra"+"50"]))
-
-            print("[test][recall]@20:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"20"],best_test_recall[str(target_domain)+"cross"+"20"],best_test_recall[str(target_domain)+"intra"+"20"]))
-            print("[test][ndcg  ]@20:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"20"],best_test_ndcg[str(target_domain)+"cross"+"20"],best_test_ndcg[str(target_domain)+"intra"+"20"]))
-            print("[test][mrr   ]@20:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"20"],best_test_mrr[str(target_domain)+"cross"+"20"],best_test_mrr[str(target_domain)+"intra"+"20"]))
-            
-            print("[test][recall]@10:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"10"],best_test_recall[str(target_domain)+"cross"+"10"],best_test_recall[str(target_domain)+"intra"+"10"]))
-            print("[test][ndcg  ]@10:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"10"],best_test_ndcg[str(target_domain)+"cross"+"10"],best_test_ndcg[str(target_domain)+"intra"+"10"]))
-            print("[test][mrr   ]@10:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"10"],best_test_mrr[str(target_domain)+"cross"+"10"],best_test_mrr[str(target_domain)+"intra"+"10"]))
-
-            print("[test][recall]@5:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"5"],best_test_recall[str(target_domain)+"cross"+"5"],best_test_recall[str(target_domain)+"intra"+"5"]))
-            print("[test][ndcg  ]@5:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"5"],best_test_ndcg[str(target_domain)+"cross"+"5"],best_test_ndcg[str(target_domain)+"intra"+"5"]))
-            print("[test][mrr   ]@5:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"5"],best_test_mrr[str(target_domain)+"cross"+"5"],best_test_mrr[str(target_domain)+"intra"+"5"]))
-
-            print("[test][recall]@1:: [%.4lf,%.4lf,%.4lf]"%(best_test_recall[str(target_domain)+"total"+"1"],best_test_recall[str(target_domain)+"cross"+"1"],best_test_recall[str(target_domain)+"intra"+"1"]))
-            print("[test][ndcg  ]@1:: [%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"total"+"1"],best_test_ndcg[str(target_domain)+"cross"+"1"],best_test_ndcg[str(target_domain)+"intra"+"1"]))
-            print("[test][mrr   ]@1:: [%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"total"+"1"],best_test_mrr[str(target_domain)+"cross"+"1"],best_test_mrr[str(target_domain)+"intra"+"1"]))
-            print("[test][position-ndcg]@20:: [%.4lf,%.4lf,%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"pos"+"1"],best_test_ndcg[str(target_domain)+"pos"+"3"],best_test_ndcg[str(target_domain)+"pos"+"5"],best_test_ndcg[str(target_domain)+"pos"+"10"],best_test_ndcg[str(target_domain)+"pos"+"20"]))
-            print("[test][position-mrr]@20:: [%.4lf,%.4lf,%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"pos"+"1"],best_test_mrr[str(target_domain)+"pos"+"3"],best_test_mrr[str(target_domain)+"pos"+"5"],best_test_mrr[str(target_domain)+"pos"+"10"],best_test_mrr[str(target_domain)+"pos"+"20"]))
-            print("[test][sparse-ndcg]@20:: [%.4lf,%.4lf,%.4lf,%.4lf,%.4lf]"%(best_test_ndcg[str(target_domain)+"sparse"+"1"],best_test_ndcg[str(target_domain)+"sparse"+"3"],best_test_ndcg[str(target_domain)+"sparse"+"5"],best_test_ndcg[str(target_domain)+"sparse"+"10"],best_test_ndcg[str(target_domain)+"sparse"+"20"]))
-            print("[test][sparse-mrr]@20:: [%.4lf,%.4lf,%.4lf,%.4lf,%.4lf]"%(best_test_mrr[str(target_domain)+"sparse"+"1"],best_test_mrr[str(target_domain)+"sparse"+"3"],best_test_mrr[str(target_domain)+"sparse"+"5"],best_test_mrr[str(target_domain)+"sparse"+"10"],best_test_mrr[str(target_domain)+"sparse"+"20"]))
-            
-            torch.save(model_state[target_domain], './knowledge/%s/%s/%s_%s-%s_%.4lf'%(args.dataset, target_domain, args.model, args.window_length, args.dims, best_valid_ndcg[target_domain]))
+    # 하이퍼파라미터 저장
+    # 모델저장
+    # Valid Printing
+    # Test Printing
