@@ -24,8 +24,8 @@ parser = argparse.ArgumentParser()
 #Env setup
 parser.add_argument("--gpu",type=str,default='0',help="gpu number")
 #Data setup
-parser.add_argument("--data_path",type=str,default="/data1/jyhwang/SCDR/", help="data_path")
-parser.add_argument("--dataset",type=str,default="105multi101",help="dataset")
+parser.add_argument("--data_path",type=str,default="/data1/jyhwang/SR/", help="data_path")
+parser.add_argument("--dataset",type=str,default="CD",help="dataset")
 parser.add_argument("--save",choices=[True, False],default=True)
 #Experiment setup
 parser.add_argument("--max_epoch",type=int,default=150,help="training epoch")
@@ -83,9 +83,9 @@ best_valid_ndcg = defaultdict(int)
 best_valid_mrr = defaultdict(int)
 best_valid_recall = defaultdict(int)
 
-best_test_ndcg=defaultdict(int)
-best_test_mrr =defaultdict(int)
-best_test_recall =defaultdict(int)
+best_test_ndcg= defaultdict(int)
+best_test_mrr = defaultdict(int)
+best_test_recall = defaultdict(int)
 
 model_state = defaultdict(int)
 best_epoch = defaultdict(int)
@@ -124,7 +124,6 @@ for epoch in range(1,args.max_epoch+1):
         
         '''
         for target_domain in range(1,args.num_domains):
-            
             valid_seqs = torch.arange(dataset.num_seqs)
             valid_domains = dataset.valid_domains
             valid_seqs = valid_seqs[(valid_domains == target_domain ).flatten()]           
