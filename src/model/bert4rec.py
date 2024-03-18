@@ -107,7 +107,7 @@ class BERT4REC(nn.Module):
         
         return rel_score
     
-    def next_item_prediction(self, user_indices, item_seq_indices, target_item_indices, target_domain):
+    def next_item_prediction(self, user_indices, item_seq_indices, target_item_indices):
         
         '''
          predict next item score
@@ -138,7 +138,7 @@ class BERT4REC(nn.Module):
         rel_score = rec_heads.mm(tgt_ebd.squeeze(1).t()) + tgt_bias.squeeze(1).t() # batch x all_Items
         return rel_score
         
-    def forward(self, user_indices, item_seq_indices, target_item_indices, target_domain, pred_opt = 'eval'):
+    def forward(self, user_indices, item_seq_indices, target_item_indices, pred_opt = 'eval'):
 
         '''
         compute model outputs
@@ -152,9 +152,9 @@ class BERT4REC(nn.Module):
             return None
             #return self.masked_prediction(user_indices, item_seq_indices, target_item_indices, input_mask = None)
         else:
-            return self.next_item_prediction(user_indices, item_seq_indices, target_item_indices, target_domain)
+            return self.next_item_prediction(user_indices, item_seq_indices, target_item_indices)
     
-    def loss(self, user_indices, sorted_item_seq_indices, item_seq_indices, pos_item_indices, neg_item_indices):
+    def loss(self, user_indices, item_seq_indices, pos_item_indices, neg_item_indices):
         
         '''
         compute loss
@@ -173,6 +173,7 @@ class BERT4REC(nn.Module):
         
         pos_tgt_item_indices = torch.cat((item_seq_indices, pos_item_indices),1).unsqueeze(2)#(B,L+1,1)
         pos_tgt_item_indices = pos_tgt_item_indices[(~input_mask)]  # [*, 1]
+        
 
         #
         neg_item_indices = neg_item_indices.unsqueeze(1)#B,1,N

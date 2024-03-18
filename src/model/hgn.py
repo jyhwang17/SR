@@ -30,7 +30,7 @@ class HGN(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.dropout_layer = nn.Dropout(self.args.dropout)
     
-    def forward(self, user_indices, item_seq_indices, target_item_indices, target_domain = None, pred_opt = ''):
+    def forward(self, user_indices, item_seq_indices, target_item_indices, pred_opt = ''):
         
         B,L = item_seq_indices.size()
         tgt_ebd = self.V(target_item_indices)#[B,L,N,D] or #[B,1,D]
@@ -62,7 +62,6 @@ class HGN(nn.Module):
 
     def loss(self,
              user_indices,
-             sorted_item_seq_indices,
              item_seq_indices,
              pos_item_indices,
              neg_item_indices

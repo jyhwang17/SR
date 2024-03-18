@@ -15,7 +15,6 @@ from model.fmlp import FMLP
 import sys
 from utils.loader_utils import SEQDataset
 from utils.eval_utils import evaluate_topk
-from utils.eval_utils import evaluate_domain_topk
 from utils.sample_utils import NEGSampler
 import time
 from time import sleep
@@ -25,10 +24,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--gpu",type=str,default='0',help="gpu number")
 #Data setup
 parser.add_argument("--data_path",type=str,default="/data1/jyhwang/SR/", help="data_path")
-parser.add_argument("--dataset",type=str,default="CD",help="dataset")
+parser.add_argument("--dataset",type=str,default="CDs",help="dataset")
 parser.add_argument("--save",choices=[True, False],default=True)
 #Experiment setup
-parser.add_argument("--max_epoch",type=int,default=150,help="training epoch")
+parser.add_argument("--max_epoch",type=int,default=200,help="training epoch")
 parser.add_argument("--lr",type=float,default=0.0005,help="learning_rate")
 parser.add_argument("--decay",type=float,default=0.0,help="weight decay")
 parser.add_argument("--batch_size",type=int,default=256,help="batch size")
@@ -59,13 +58,8 @@ np.random.seed(random_seed)
 
 #Data loading
 dataset = SEQDataset(args)
-args.num_domains = len(dataset.num_dom_items)
-args.num_seqs = dataset.num_seqs
+args.num_seqs = args.num_users = dataset.num_users
 args.num_items = dataset.num_items
-args.num_dom_items = dataset.num_dom_items
-args.ii_mat_tensor = dataset.ii_mat_tensor
-args.item2dom = dataset.item2dom
-item2dom = torch.LongTensor(dataset.item2dom).cuda()
 
 if args.model == 'sasrec':
     model = SASREC(args).cuda()
@@ -76,20 +70,17 @@ elif args.model == 'fmlp':
 elif args.model == 'hgn':
     model = HGN(args).cuda()
 
+
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
 
-best_valid_ndcg = defaultdict(int)
-best_valid_mrr = defaultdict(int)
-best_valid_recall = defaultdict(int)
-
-best_test_ndcg= defaultdict(int)
-best_test_mrr = defaultdict(int)
-best_test_recall = defaultdict(int)
+best_valid = 0
+best= defaultdict(int)
 
 model_state = defaultdict(int)
 best_epoch = defaultdict(int)
 neg_sampler = NEGSampler(args)
+stop_cnt = 0
 
 for epoch in range(1,args.max_epoch+1):
 
@@ -97,57 +88,83 @@ for epoch in range(1,args.max_epoch+1):
 
     P = [1,args.window_length+1,args.window_length+2]
     for it, batch_instance in enumerate(tqdm(train_loader, desc="Training", position=0, disable = (args.mode =='tune') )):
+        
         users = batch_instance[:,:P[0]].squeeze().cuda()
         sequence = batch_instance[:,P[0]:P[1]].cuda()
         positive = batch_instance[:,P[1]:P[2]].cuda()
         sorted_sequence = batch_instance[:,P[2]:].cuda()
-        if args.model == 'sasrec'or args.model=='hgn' or args.model == 'fmlp' :
-            negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.window_length) # B,L
-        else:
-            negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
+
+        negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
         batch_loss=[]
 
         task_loss = model.loss(users,
-                               sorted_sequence,
                                sequence,
                                positive, #B,1
                                negative) #B,N
-                               
+
         batch_loss = task_loss.mean()
         optimizer.zero_grad()
         batch_loss.backward()
         optimizer.step()#B,L,L
 
     model.eval()
-    if epoch %2==0 or True:
-        # Validation
+    if epoch %2==0:
+        validation_mask = (torch.LongTensor(dataset.valid_last_subseqs).sum(1) > 0)
+        users = torch.arange(dataset.num_seqs)
         
-        '''
-        for target_domain in range(1,args.num_domains):
-            valid_seqs = torch.arange(dataset.num_seqs)
-            valid_domains = dataset.valid_domains
-            valid_seqs = valid_seqs[(valid_domains == target_domain ).flatten()]           
-            result = evaluate_domain_topk(model, valid_seqs, dataset, target_domain, 'valid', 'eval', 10)
-
-            valid_seqs = torch.arange(dataset.num_seqs)
-            valid_domains = dataset.valid_domains
-            valid_type = dataset.cd_type
+        result20 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
+        if args.mode == 'develop':
+            print("Validation[%s/%s]"%(epoch,args.max_epoch))
+            print("[RECALL ]@20:: %.4lf"%(result20['recall']))
+            print("[NDCG   ]@20:: %.4lf"%(result20['ndcg']))
+            print("[MRR    ]@20:: %.4lf"%(result20['mrr']))
+        
+        if best_valid <= result20['ndcg']:
+            best_valid = result20['ndcg']
+            model_state = copy.deepcopy(model.state_dict())
+            #Testing
+            test_mask = (torch.LongTensor(dataset.test_last_subseqs).sum(1) > 0)
+            users = torch.arange(dataset.num_seqs)
+        
+            result10 = evaluate_topk(model, users[test_mask], dataset, 'test', 10)
+            result20 = evaluate_topk(model, users[test_mask], dataset, 'test', 20)
+            result50 = evaluate_topk(model, users[test_mask], dataset, 'test', 50)
             
-            if args.mode == 'develop':
-                print("Validation")
-                print("Domain:: %s"%(target_domain))
-                print("[%s/%s][recall]@10:: %.4lf"%(epoch,args.max_epoch,result["recall"]))
-                print("[%s/%s][ndcg  ]@10:: %.4lf"%(epoch,args.max_epoch,result["ndcg"]))
-                print("[%s/%s][mrr   ]@10:: %.4lf"%(epoch,args.max_epoch,result["mrr"]))
-
-            if result["ndcg"] >= best_valid_ndcg[target_domain]:
-
-        if args.mode == 'develop': #and epoch % 5 ==0:
-        '''
+            best["recall@10"] = result10['recall']
+            best["recall@20"] = result20['recall']
+            best["recall@50"] = result50['recall']
+            
+            best["ndcg@10"] = result10['ndcg']
+            best["ndcg@20"] = result20['ndcg']
+            best["ndcg@50"] = result50['ndcg']
+            
+            best["mrr@10"] = result10['mrr']
+            best["mrr@20"] = result20['mrr']
+            best["mrr@50"] = result50['mrr']
+            
+            
+            stop_cnt=0
+        else:
+            stop_cnt= stop_cnt + 1
+    
+    if stop_cnt >=5:break
+        
 if args.mode == 'tune':
     print(args)
+
     objs = {"hyperparams": args}
-    # 하이퍼파라미터 저장
-    # 모델저장
-    # Valid Printing
-    # Test Printing
+    with open('./knowledge/'+'%s'%(args.dataset)+'/hyperparams/'+'%s_%s-%s_%.4lf'%(args.model, args.window_length, args.dims, float(best["ndcg@20"]))+'.pkl','wb') as f:
+        pickle.dump(objs, f)
+    print("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
+    print("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
+    print("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
+    
+    print("[NDCG   ]@10:: %.4lf"%(best["ndcg@10"]))
+    print("[NDCG   ]@20:: %.4lf"%(best["ndcg@20"]))
+    print("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
+    
+    print("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
+    print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
+    print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
+    
+    torch.save(model_state, './knowledge/%s/%s_%s-%s_%.4lf'%(args.dataset, args.model, args.window_length, args.dims, best["ndcg@20"]))
