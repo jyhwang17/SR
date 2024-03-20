@@ -40,7 +40,7 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['asmip'],default='asmip')
+parser.add_argument("--model",choices=['nip'],default='nip')
 parser.add_argument("--shots",type = int, default = 1, help = "shots")
 parser.add_argument("--alpha",type = float, default = 0.1, help = "")
 parser.add_argument("--dropout",type = float, default = 0.1,help="dropout")
@@ -66,7 +66,7 @@ dataset = SEQDataset(args)
 args.num_seqs = args.num_users = dataset.num_users
 args.num_items = dataset.num_items
 
-model = ASMIP(args).cuda()
+model = NIP(args).cuda()
 
 
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
