@@ -95,12 +95,12 @@ for epoch in range(1,args.max_epoch+1):
         negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
         batch_loss=[]
 
-        amip_loss, mip_loss = model.loss(users,
-                                        sequence,
-                                        positive, #B,1
-                                        negative) #B,N
+        nip_loss = model.loss(users,
+                              sequence,
+                              positive, #B,1
+                              negative) #B,N
 
-        batch_loss = amip_loss.mean() + args.alpha*mip_loss.mean()
+        batch_loss = nip_loss.mean()
         
         optimizer.zero_grad()
         batch_loss.backward()

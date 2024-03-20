@@ -20,7 +20,7 @@ do
                                                         --dataset ${dataset}\
                                                         --model ${model}\
                                                         --mode 'tune' \
-                                                        --max_epoch 300\
+                                                        --max_epoch 400\
                                                         --batch_size 256\
                                                         --lr ${lr}\
                                                         --window_length ${window_length}\
