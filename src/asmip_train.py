@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--gpu",type=str,default='0',help="gpu number")
 #Data setup
 parser.add_argument("--data_path",type=str,default="/data1/jyhwang/SR/", help="data_path")
-parser.add_argument("--dataset",type=str,default="CDs",help="dataset")
+parser.add_argument("--dataset",type=str,default="Books",help="dataset")
 parser.add_argument("--save",choices=[True, False],default=True)
 #Experiment setup
 parser.add_argument("--max_epoch",type=int,default=200,help="training epoch")
@@ -40,8 +40,10 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp','nip','amip','asmip'],default='bert4rec')
-parser.add_argument("--dropout",type=float,default=0.1,help="dropout")
+parser.add_argument("--model",choices=['asmip'],default='asmip')
+parser.add_argument("--shots",type = int, default = 1, help = "shots")
+parser.add_argument("--alpha",type = float, default = 0.1, help = "")
+parser.add_argument("--dropout",type = float, default = 0.1,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
 parser.add_argument("--encoder_layers", type=int, default=2, help="# of encoder layers")
 parser.add_argument("--graph_layers", type=int, default=1, help="# of graph layers")
@@ -64,26 +66,13 @@ dataset = SEQDataset(args)
 args.num_seqs = args.num_users = dataset.num_users
 args.num_items = dataset.num_items
 
-if args.model == 'sasrec':
-    model = SASREC(args).cuda()
-elif args.model == 'nip':
-    model = NIP(args).cuda()
-elif args.model == 'amip':
-    model = AMIP(args).cuda()
-elif args.model == 'asmip':
-    model = ASMIP(args).cuda()
-elif args.model == 'bert4rec':
-    model = BERT4REC(args).cuda()
-elif args.model == 'fmlp':
-    model = FMLP(args).cuda()
-elif args.model == 'hgn':
-    model = HGN(args).cuda()
+model = ASMIP(args).cuda()
 
 
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
 
-best_valid = 0
+best_valid = defaultdict(int)
 best= defaultdict(int)
 
 model_state = defaultdict(int)
@@ -106,52 +95,47 @@ for epoch in range(1,args.max_epoch+1):
         negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
         batch_loss=[]
 
-        task_loss = model.loss(users,
-                               sequence,
-                               positive, #B,1
-                               negative) #B,N
+        amip_loss,mip_loss = model.loss(users,
+                                        sequence,
+                                        positive, #B,1
+                                        negative) #B,N
 
-        batch_loss = task_loss.mean()
+        batch_loss = amip_loss.mean() + mip_loss.mean()
+        
         optimizer.zero_grad()
         batch_loss.backward()
         optimizer.step()#B,L,L
 
     model.eval()
-    if epoch %2==0:
+    if epoch % 3 == 0:
         validation_mask = (torch.LongTensor(dataset.valid_last_subseqs).sum(1) > 0)
         users = torch.arange(dataset.num_seqs)
         
         result20 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
+        
         if args.mode == 'develop':
             print("Validation[%s/%s]"%(epoch,args.max_epoch))
             print("[RECALL ]@20:: %.4lf"%(result20['recall']))
             print("[NDCG   ]@20:: %.4lf"%(result20['ndcg']))
             print("[MRR    ]@20:: %.4lf"%(result20['mrr']))
         
-        if best_valid <= result20['ndcg']:
-            best_valid = result20['ndcg']
-            model_state = copy.deepcopy(model.state_dict())
-            #Testing
-            test_mask = (torch.LongTensor(dataset.test_last_subseqs).sum(1) > 0)
-            users = torch.arange(dataset.num_seqs)
-        
-            result10 = evaluate_topk(model, users[test_mask], dataset, 'test', 10)
-            result20 = evaluate_topk(model, users[test_mask], dataset, 'test', 20)
-            result50 = evaluate_topk(model, users[test_mask], dataset, 'test', 50)
+        if best_valid['recall@20'] <= result20['recall']:
+            best_valid['recall@20'] = result20['recall']
             
-            best["recall@10"] = result10['recall']
-            best["recall@20"] = result20['recall']
-            best["recall@50"] = result50['recall']
-            
-            best["ndcg@10"] = result10['ndcg']
-            best["ndcg@20"] = result20['ndcg']
-            best["ndcg@50"] = result50['ndcg']
-            
-            best["mrr@10"] = result10['mrr']
-            best["mrr@20"] = result20['mrr']
-            best["mrr@50"] = result50['mrr']
-            
-            
+            if args.mode == 'tune':
+                result10 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
+                result50 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
+                result100 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
+                best_valid['recall@10'] = result10['recall']
+                best_valid['recall@20'] = result20['recall']
+                best_valid['recall@50'] = result50['recall']
+                best_valid['recall@100'] = result100['recall']
+                
+                best_valid['ndcg@10'] = result10['ndcg']
+                best_valid['ndcg@20'] = result20['ndcg']
+                best_valid['ndcg@50'] = result50['ndcg']
+                best_valid['ndcg@100'] = result100['ndcg']
+                
             stop_cnt=0
         else:
             stop_cnt= stop_cnt + 1
@@ -164,16 +148,13 @@ if args.mode == 'tune':
     objs = {"hyperparams": args}
     with open('./knowledge/'+'%s'%(args.dataset)+'/hyperparams/'+'%s_%s-%s_%.4lf'%(args.model, args.window_length, args.dims, float(best["ndcg@20"]))+'.pkl','wb') as f:
         pickle.dump(objs, f)
+    
     print("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
     print("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
     print("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
+    print("[RECALL ]@100:: %.4lf"%(best["recall@100"]))
     
     print("[NDCG   ]@10:: %.4lf"%(best["ndcg@10"]))
     print("[NDCG   ]@20:: %.4lf"%(best["ndcg@20"]))
     print("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
-    
-    print("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
-    print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
-    print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
-    
-    torch.save(model_state, './knowledge/%s/%s_%s-%s_%.4lf'%(args.dataset, args.model, args.window_length, args.dims, best["ndcg@20"]))
+    print("[NDCG   ]@100:: %.4lf"%(best["ndcg@100"]))

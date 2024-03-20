@@ -242,8 +242,9 @@ class MultiHeadAttention(nn.Module):
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         # [batch_size heads seq_len seq_len] scores
         # [batch_size 1 1 seq_len]
-        position_bias = self.relative_encoder(attention_scores.size(2),attention_scores.size(3))
-        attention_scores = attention_scores + attention_mask + position_bias
+        #position_bias = self.relative_encoder(attention_scores.size(2),attention_scores.size(3))
+        
+        attention_scores = attention_scores + attention_mask #+ position_bias
         #print(self.relative_encoder(attention_scores.size(2),attention_scores.size(3)))
         # Normalize the attention scores to probabilities.
         attention_probs = self.softmax(attention_scores)
