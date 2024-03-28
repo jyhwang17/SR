@@ -1,6 +1,6 @@
 for dataset in $1
 do
-        for model in 'nip'
+        for model in 'nmip' 'pmip' 'amip'
         do
                 for lr in $2
                 do
@@ -10,9 +10,9 @@ do
                                 do
                                         for alpha in $3
                                         do
-                                                for mask_prob in 0.0
+                                                for mask_prob in 0.2 0.25 0.3 0.35
                                                 do
-                                                        for shots in 1
+                                                        for shots in 5
                                                         do
                                                             python3 -u nip_train.py \
                                                             --data_path './data/SR/' \
@@ -30,7 +30,7 @@ do
                                                             --dropout 0.3 \
                                                             --decay ${decay} >> \
                                                             'log/'${dataset}'/'${model}'_'${window_length}'_'${dims}.log
-                                                        
+                                                            
                                                         done
                                                 done
                                         done
