@@ -27,7 +27,7 @@ do
                                                             --dims ${dims}\
                                                             --mask_prob ${mask_prob}\
                                                             --shots ${shots}\
-                                                            --dropout 0.3 \
+                                                            --dropout 0.3 >> \
                                                             'log/'${dataset}'/'${model}'_'${window_length}'_'${dims}.log
                                                         
                                                         done
