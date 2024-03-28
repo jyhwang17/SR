@@ -234,5 +234,5 @@ if args.mode == 'tune':
     
     print("[RECALL ]@20:: %.4lf"%(best_valid["recall@20"]))
     print("[NDCG   ]@20:: %.4lf"%(best_valid["ndcg@20"]))
-    print("[MRR    ]@50:: %.4lf"%(best_valid["ndcg@20"]))
+    print("[MRR    ]@20:: %.4lf"%(best_valid["mrr@20"]))
     
