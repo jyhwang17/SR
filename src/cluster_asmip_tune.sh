@@ -15,7 +15,7 @@ do
                                                         for shots in 5
                                                         do
                                                             python3 -u task_train.py \
-                                                            --data_path './data/SR/' \
+                                                            --data_path '../../data/SR/' \
                                                             --dataset ${dataset}\
                                                             --model ${model}\
                                                             --mode 'tune' \

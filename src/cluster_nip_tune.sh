@@ -15,7 +15,7 @@ do
                                                         for shots in 1
                                                         do
                                                             python3 -u task_train.py \
-                                                            --data_path './data/SR/' \
+                                                            --data_path '../../data/SR/' \
                                                             --dataset ${dataset}\
                                                             --model ${model}\
                                                             --mode 'tune' \
