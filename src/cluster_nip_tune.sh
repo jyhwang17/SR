@@ -28,7 +28,6 @@ do
                                                             --mask_prob ${mask_prob}\
                                                             --shots ${shots}\
                                                             --dropout 0.3 \
-                                                            --decay ${decay} >> \
                                                             'log/'${dataset}'/'${model}'_'${window_length}'_'${dims}.log
                                                         
                                                         done
