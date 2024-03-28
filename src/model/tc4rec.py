@@ -13,11 +13,11 @@ from utils.inference_utils import filter_sequence
 from utils.loader_utils import load_mapping_info
 from collections import namedtuple
 
-class AMIP(nn.Module):
+class TC4REC(nn.Module):
     
     def __init__(self, args):
         
-        super(AMIP, self).__init__()
+        super(TC4REC, self).__init__()
         
         self.args = args
         self.mask_prob = self.args.mask_prob
@@ -207,63 +207,101 @@ class AMIP(nn.Module):
         mask_prob = self.mask_prob
         amip_loss = torch.cuda.DoubleTensor()
         mip_loss = torch.cuda.DoubleTensor()
-
+        consistency_loss = torch.cuda.DoubleTensor()
         
         pad_filter = (item_seq_indices.sum(-1)!=0)
         item_seq_indices = item_seq_indices[pad_filter]
         pos_item_indices = pos_item_indices[pad_filter]
         neg_item_indices = neg_item_indices[pad_filter]
         
+        
         for i in range(self.args.shots):
             masked_item_seq_indices, input_mask = self.mask_sequence(item_seq_indices, mask_prob)
             masked_item_seq_indices, input_mask = self.append_mask(masked_item_seq_indices, input_mask)#맨마지막이 mask
+            
+            pos_tgt_item_indices1 = torch.cat((item_seq_indices[:,1:],
+                                               pos_item_indices, pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Next Item
+            pos_tgt_item_indices2 = torch.cat((pos_item_indices, item_seq_indices[:,:]),1).unsqueeze(2) #(B,L+1,1) #Prev Item
+            
+            pos_tgt_item_indices3 = torch.cat((item_seq_indices[:,:],pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Self Item
+            
             neg_tgt_item_indices = neg_item_indices.unsqueeze(1).expand(-1,item_seq_indices.size(1)+1,-1) # B,L+1,N
             
-            next_pos_item_indices = torch.cat((item_seq_indices[:,1:],
-                                               pos_item_indices, pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Next Item
-            next_tgt_item_indices = torch.cat((next_pos_item_indices,neg_tgt_item_indices),-1)
+            tgt_item_indices1 = torch.cat((pos_tgt_item_indices1,neg_tgt_item_indices),-1)
+            tgt_item_indices2 = torch.cat((pos_tgt_item_indices2,neg_tgt_item_indices),-1)
+            tgt_item_indices3 = torch.cat((pos_tgt_item_indices3,neg_tgt_item_indices),-1)
             
-            
-            prev_pos_item_indices = torch.cat((pos_item_indices, item_seq_indices[:,:]),1).unsqueeze(2) #(B,L+1,1) #Prev Item
-            prev_tgt_item_indices = torch.cat((prev_pos_item_indices, neg_tgt_item_indices),-1)
-            
-            
-            self_pos_tgt_item_indices = torch.cat((item_seq_indices[:,:], pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Self Item
-            self_tgt_item_indices = torch.cat((self_pos_tgt_item_indices, neg_tgt_item_indices),-1)
-            
-
             false_mask = torch.zeros((input_mask.size(0),1) ,device = input_mask.device).bool()
-            loss_mask_next = (torch.cat((~input_mask[:,1:],false_mask),-1))  # next 아이템이 mask인지 아닌지
-            loss_mask_prev = (torch.cat((false_mask, ~input_mask[:,:-1]),-1)) # prev, 아이템이 mask인지 아닌지
-            loss_mask_self = ~input_mask
+            loss_mask1 = (torch.cat((~input_mask[:,1:],false_mask),-1))  # next 아이템이 mask인지 아닌지
+            loss_mask2 = (torch.cat((false_mask, ~input_mask[:,:-1]),-1)) # prev, 아이템이 mask인지 아닌지
+            loss_mask3 = ~input_mask
             
             #Get representation
             transformer_rep = self.get_contextualized_rep(user_indices, masked_item_seq_indices)
             
             # Get score (next-token)
-            rep4next  = transformer_rep[loss_mask_next].unsqueeze(1) # [*,1,dims]
-            tgt_ebd = self.V(next_tgt_item_indices)[loss_mask_next]
-            score_next = rep4next.bmm(tgt_ebd.permute([0,2,1])).squeeze(1) #[*,1+N]
-            numerator_next =  score_next[:,[0]] # (*, 1)
-            denominator_next = (score_next[:,1:].exp().sum(-1,keepdims=True) + score_next[:,[0]].exp() ).log() #[*, 1]
-            loss_next = -((numerator_next - denominator_next))
-            
+            rep1  = transformer_rep[loss_mask1].unsqueeze(1) # [*,1,dims]
+            tgt_ebd1 = self.V(tgt_item_indices1)[loss_mask1]
+            score1 = rep1.bmm(tgt_ebd1.permute([0,2,1])).squeeze(1) #[*,1+N]
+            numerator1 =  score1[:,[0]] # (*, 1)
+            denominator1 = (score1[:,1:].exp().sum(-1,keepdims=True) + score1[:,[0]].exp() ).log() #[*, 1]
+            loss1 = -((numerator1 - denominator1))
             # (prev-token)
-            rep4prev  = transformer_rep[loss_mask_prev].unsqueeze(1) # [*,1,dims]
-            tgt_ebd = self.V(prev_tgt_item_indices)[loss_mask_prev]
-            score_prev = rep4prev.bmm(tgt_ebd.permute([0,2,1])).squeeze(1) #[*,1+N]
-            numerator_prev =  score_prev[:,[0]] # (*, 1)
-            denominator_prev = (score_prev[:,1:].exp().sum(-1,keepdims=True) + score_prev[:,[0]].exp() ).log() #[*, 1]
-            loss_prev = -((numerator_prev - denominator_prev))
-            amip_loss = torch.cat((amip_loss, loss_next, loss_prev),0)
-            '''
-            rep4self = transformer_rep[loss_mask_self].unsqueeze(1)
-            tgt_ebd = self.V(self_tgt_item_indices)[loss_mask_self]
-            score_self = rep4self.bmm(tgt_ebd.permute([0,2,1])).squeeze(1)
-            numerator_self = score_self[:,[0]]
-            denominator_self = (score_self[:,1:].exp().sum(-1,keepdims=True) + score_self[:,[0]].exp() ).log() #[*, 1]
-            loss_self = -((numerator_self - denominator_self))
+            rep2  = transformer_rep[loss_mask2].unsqueeze(1) # [*,1,dims]
+            tgt_ebd2 = self.V(tgt_item_indices2)[loss_mask2]
+            score2 = rep2.bmm(tgt_ebd2.permute([0,2,1])).squeeze(1) #[*,1+N]
+            numerator2 =  score2[:,[0]] # (*, 1)
+            denominator2 = (score2[:,1:].exp().sum(-1,keepdims=True) + score2[:,[0]].exp() ).log() #[*, 1]
+            loss2 = -((numerator2 - denominator2))
             
-            mip_loss = torch.cat((mip_loss, loss_self),0)
-            '''
-        return amip_loss.mean()
+            rep3 = transformer_rep[loss_mask3].unsqueeze(1)
+            tgt_ebd3 = self.V(tgt_item_indices3)[loss_mask3]
+            score3 = rep3.bmm(tgt_ebd3.permute([0,2,1])).squeeze(1)
+            numerator3 = score3[:,[0]]
+            denominator3 = (score3[:,1:].exp().sum(-1,keepdims=True) + score3[:,[0]].exp() ).log() #[*, 1]
+            loss3 = -((numerator3 - denominator3))
+            
+            amip_loss = torch.cat((amip_loss, loss1, loss2),0)
+            mip_loss = torch.cat((mip_loss, loss3),0)
+        
+            
+            # Task-oriented Consistency
+            
+            # Self-Prediction
+            task_vector3 = loss_mask3[:,1:self.args.window_length] # self, B,L-1
+            task_vector3 = torch.cat((false_mask,task_vector3,false_mask),-1)# B,L+1
+            
+            #
+            task_vector2 = torch.roll(loss_mask3,-1,-1)[:,0:self.args.window_length-1] #right-item prediction
+            task_vector2 = torch.cat((task_vector2, false_mask, false_mask),-1)
+            
+            task_vector3 = torch.roll(loss_mask3,1,-1)[:,2:] #size check self-item
+            task_vector3 = torch.cat((false_mask, false_mask, task_vector3),-1)
+            
+            #task_rep = 0.333333333333*(transformer_rep[task_vector1] + transformer_rep[task_vector2]
+            #+ transformer_rep[task_vector3]) #[*, D]
+            r_predictor = transformer_rep[task_vector1] 
+            l_predictor = transformer_rep[task_vector2]
+            s_predictor = transformer_rep[task_vector3]
+            
+            task_rep = 0.5*(transformer_rep[task_vector1]+ transformer_rep[task_vector3]) #[*, D]
+            
+            task_items = tgt_item_indices3[task_vector1][:,0] #[*]
+            ans_ebd = self.V(task_items) #[*,D] 
+            
+            # ITEM[*,D] x SEQ[*,D] = item-seq score[*,*]
+            task_scores = ans_ebd.mm(torch.transpose(task_rep,0,1))
+            diag_mask =  torch.eye(task_scores.size(0)).cuda()# 이게 문제인데.....내일 다시 검토하기.
+            ones_mask =  torch.ones(task_scores.size()).cuda()
+            diag_mask = ones_mask - diag_mask
+            task_neg_scores = (task_scores.exp()*diag_mask).sum(1,keepdims=True) + torch.transpose((task_scores.exp()*diag_mask),0,1).sum(1,keepdims=True)
+            
+            #[*,1,D] x [*,D,1+N]: [*, 1, 1+N]
+            task_pos_scores = torch.diagonal(task_scores,0).unsqueeze(1)
+            numerator4 = task_pos_scores
+            denominator4 = (task_neg_scores + task_pos_scores.exp()).log()
+            loss4 = -((numerator4 - denominator4))
+            
+            consistency_loss = torch.cat((consistency_loss, loss4),0)
+
+        return amip_loss.mean(), mip_loss.mean(), consistency_loss.mean()

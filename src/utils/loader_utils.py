@@ -104,6 +104,10 @@ class SEQDataset(Dataset):
             
             self.sorted_pos_lists = data_dict["sorted_pos_lists"]
             
+            self.valid_items = data_dict["valid_items"]
+            self.test_items = data_dict["test_items"]
+            self.item_pop = data_dict["item_pop"]
+            
         except Exception as e:
             print('load error', e)
         self.num_seqs = self.num_users

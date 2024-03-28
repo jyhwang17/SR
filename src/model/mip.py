@@ -13,11 +13,11 @@ from utils.inference_utils import filter_sequence
 from utils.loader_utils import load_mapping_info
 from collections import namedtuple
 
-class AMIP(nn.Module):
+class MIP(nn.Module):
     
     def __init__(self, args):
         
-        super(AMIP, self).__init__()
+        super(MIP, self).__init__()
         
         self.args = args
         self.mask_prob = self.args.mask_prob
@@ -49,6 +49,14 @@ class AMIP(nn.Module):
         
         self.dropout_layer = nn.Dropout(self.args.dropout)
         self.act = nn.GELU()
+        #self.projection = nn.Linear(self.args.dims, self.args.dims)
+        '''
+        self.projection = FF(hidden_size = self.args.dims,
+                             inner_size= self.args.dims*4,
+                             hidden_dropout_prob=self.args.dropout,
+                             hidden_act='gelu',
+                             layer_norm_eps=1e-24)
+        '''
         self.layer_norm = nn.LayerNorm(self.args.dims)
 
         #etc
@@ -170,7 +178,7 @@ class AMIP(nn.Module):
         
         # rec_heads: batch x dims (e.g., 500, 64)
         # tgt_ebd : all_Items x dims (e.g., 32980, 1, 64)
-        rec_heads = seq_rep[:,-2,:]
+        rec_heads = seq_rep[:,-1,:]
         
         rel_score = rec_heads.mm(tgt_ebd.squeeze(1).t()) # batch x all_Items
         return rel_score
@@ -207,63 +215,27 @@ class AMIP(nn.Module):
         mask_prob = self.mask_prob
         amip_loss = torch.cuda.DoubleTensor()
         mip_loss = torch.cuda.DoubleTensor()
-
-        
-        pad_filter = (item_seq_indices.sum(-1)!=0)
-        item_seq_indices = item_seq_indices[pad_filter]
-        pos_item_indices = pos_item_indices[pad_filter]
-        neg_item_indices = neg_item_indices[pad_filter]
-        
         for i in range(self.args.shots):
             masked_item_seq_indices, input_mask = self.mask_sequence(item_seq_indices, mask_prob)
-            masked_item_seq_indices, input_mask = self.append_mask(masked_item_seq_indices, input_mask)#맨마지막이 mask
+            masked_item_seq_indices, input_mask = self.append_mask(masked_item_seq_indices, input_mask)
+            
+            pos_tgt_item_indices = torch.cat((item_seq_indices[:,:],pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Self Item
             neg_tgt_item_indices = neg_item_indices.unsqueeze(1).expand(-1,item_seq_indices.size(1)+1,-1) # B,L+1,N
             
-            next_pos_item_indices = torch.cat((item_seq_indices[:,1:],
-                                               pos_item_indices, pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Next Item
-            next_tgt_item_indices = torch.cat((next_pos_item_indices,neg_tgt_item_indices),-1)
-            
-            
-            prev_pos_item_indices = torch.cat((pos_item_indices, item_seq_indices[:,:]),1).unsqueeze(2) #(B,L+1,1) #Prev Item
-            prev_tgt_item_indices = torch.cat((prev_pos_item_indices, neg_tgt_item_indices),-1)
-            
-            
-            self_pos_tgt_item_indices = torch.cat((item_seq_indices[:,:], pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Self Item
-            self_tgt_item_indices = torch.cat((self_pos_tgt_item_indices, neg_tgt_item_indices),-1)
-            
-
-            false_mask = torch.zeros((input_mask.size(0),1) ,device = input_mask.device).bool()
-            loss_mask_next = (torch.cat((~input_mask[:,1:],false_mask),-1))  # next 아이템이 mask인지 아닌지
-            loss_mask_prev = (torch.cat((false_mask, ~input_mask[:,:-1]),-1)) # prev, 아이템이 mask인지 아닌지
-            loss_mask_self = ~input_mask
+            tgt_item_indices = torch.cat((pos_tgt_item_indices,neg_tgt_item_indices),-1)
+            loss_mask = ~input_mask
             
             #Get representation
             transformer_rep = self.get_contextualized_rep(user_indices, masked_item_seq_indices)
             
             # Get score (next-token)
-            rep4next  = transformer_rep[loss_mask_next].unsqueeze(1) # [*,1,dims]
-            tgt_ebd = self.V(next_tgt_item_indices)[loss_mask_next]
-            score_next = rep4next.bmm(tgt_ebd.permute([0,2,1])).squeeze(1) #[*,1+N]
-            numerator_next =  score_next[:,[0]] # (*, 1)
-            denominator_next = (score_next[:,1:].exp().sum(-1,keepdims=True) + score_next[:,[0]].exp() ).log() #[*, 1]
-            loss_next = -((numerator_next - denominator_next))
+            rep = transformer_rep[loss_mask].unsqueeze(1)
+            tgt_ebd = self.V(tgt_item_indices)[loss_mask]
+            score = rep.bmm(tgt_ebd.permute([0,2,1])).squeeze(1)
+            numerator = score[:,[0]]
+            denominator = (score[:,1:].exp().sum(-1,keepdims=True) + score[:,[0]].exp() ).log() #[*, 1]
+            loss = -((numerator - denominator))
             
-            # (prev-token)
-            rep4prev  = transformer_rep[loss_mask_prev].unsqueeze(1) # [*,1,dims]
-            tgt_ebd = self.V(prev_tgt_item_indices)[loss_mask_prev]
-            score_prev = rep4prev.bmm(tgt_ebd.permute([0,2,1])).squeeze(1) #[*,1+N]
-            numerator_prev =  score_prev[:,[0]] # (*, 1)
-            denominator_prev = (score_prev[:,1:].exp().sum(-1,keepdims=True) + score_prev[:,[0]].exp() ).log() #[*, 1]
-            loss_prev = -((numerator_prev - denominator_prev))
-            amip_loss = torch.cat((amip_loss, loss_next, loss_prev),0)
-            '''
-            rep4self = transformer_rep[loss_mask_self].unsqueeze(1)
-            tgt_ebd = self.V(self_tgt_item_indices)[loss_mask_self]
-            score_self = rep4self.bmm(tgt_ebd.permute([0,2,1])).squeeze(1)
-            numerator_self = score_self[:,[0]]
-            denominator_self = (score_self[:,1:].exp().sum(-1,keepdims=True) + score_self[:,[0]].exp() ).log() #[*, 1]
-            loss_self = -((numerator_self - denominator_self))
-            
-            mip_loss = torch.cat((mip_loss, loss_self),0)
-            '''
-        return amip_loss.mean()
+            mip_loss = torch.cat((mip_loss, loss),0)
+        
+        return mip_loss.mean()

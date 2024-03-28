@@ -13,11 +13,11 @@ from utils.inference_utils import filter_sequence
 from utils.loader_utils import load_mapping_info
 from collections import namedtuple
 
-class AMIP(nn.Module):
+class NMIP(nn.Module):
     
     def __init__(self, args):
         
-        super(AMIP, self).__init__()
+        super(NMIP, self).__init__()
         
         self.args = args
         self.mask_prob = self.args.mask_prob
@@ -223,15 +223,12 @@ class AMIP(nn.Module):
                                                pos_item_indices, pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Next Item
             next_tgt_item_indices = torch.cat((next_pos_item_indices,neg_tgt_item_indices),-1)
             
-            
             prev_pos_item_indices = torch.cat((pos_item_indices, item_seq_indices[:,:]),1).unsqueeze(2) #(B,L+1,1) #Prev Item
             prev_tgt_item_indices = torch.cat((prev_pos_item_indices, neg_tgt_item_indices),-1)
-            
             
             self_pos_tgt_item_indices = torch.cat((item_seq_indices[:,:], pos_item_indices),1).unsqueeze(2) #(B,L+1,1) #Self Item
             self_tgt_item_indices = torch.cat((self_pos_tgt_item_indices, neg_tgt_item_indices),-1)
             
-
             false_mask = torch.zeros((input_mask.size(0),1) ,device = input_mask.device).bool()
             loss_mask_next = (torch.cat((~input_mask[:,1:],false_mask),-1))  # next 아이템이 mask인지 아닌지
             loss_mask_prev = (torch.cat((false_mask, ~input_mask[:,:-1]),-1)) # prev, 아이템이 mask인지 아닌지
@@ -247,7 +244,9 @@ class AMIP(nn.Module):
             numerator_next =  score_next[:,[0]] # (*, 1)
             denominator_next = (score_next[:,1:].exp().sum(-1,keepdims=True) + score_next[:,[0]].exp() ).log() #[*, 1]
             loss_next = -((numerator_next - denominator_next))
+            amip_loss = torch.cat((amip_loss, loss_next),0)
             
+            '''
             # (prev-token)
             rep4prev  = transformer_rep[loss_mask_prev].unsqueeze(1) # [*,1,dims]
             tgt_ebd = self.V(prev_tgt_item_indices)[loss_mask_prev]
@@ -255,7 +254,7 @@ class AMIP(nn.Module):
             numerator_prev =  score_prev[:,[0]] # (*, 1)
             denominator_prev = (score_prev[:,1:].exp().sum(-1,keepdims=True) + score_prev[:,[0]].exp() ).log() #[*, 1]
             loss_prev = -((numerator_prev - denominator_prev))
-            amip_loss = torch.cat((amip_loss, loss_next, loss_prev),0)
+            '''
             '''
             rep4self = transformer_rep[loss_mask_self].unsqueeze(1)
             tgt_ebd = self.V(self_tgt_item_indices)[loss_mask_self]

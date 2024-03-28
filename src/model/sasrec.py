@@ -90,9 +90,8 @@ class SASREC(nn.Module):
         total_sequence = torch.cat((item_seq_indices, pos_item_indices),1) #[B,L+1]
         neg_tgt_item_indices = neg_item_indices.unsqueeze(1).expand(-1,item_seq_indices.size(1),-1) #[B,L,L]
         neg_tgt_item_indices = torch.diagonal(neg_tgt_item_indices, offset = 0, dim1=1, dim2=2).unsqueeze(-1)
-
-        pad_filter = (total_sequence.sum(-1)!=0)
         
+        pad_filter = (total_sequence.sum(-1)!=0)
         total_sequence = total_sequence[pad_filter]
         neg_tgt_item_indices = neg_tgt_item_indices[pad_filter]
         

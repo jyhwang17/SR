@@ -12,9 +12,16 @@ from model.sasrec import SASREC
 from model.bert4rec import BERT4REC
 from model.hgn import HGN
 from model.fmlp import FMLP
+from model.ct4rec import CT4REC
 from model.nip import NIP
+from model.cbit import CBIT
+from model.tc4rec import TC4REC
+
+from model.pmip import PMIP
+from model.nmip import NMIP
 from model.amip import AMIP
 from model.asmip import ASMIP
+
 import sys
 from utils.loader_utils import SEQDataset
 from utils.eval_utils import evaluate_topk
@@ -25,10 +32,12 @@ from collections import defaultdict
 parser = argparse.ArgumentParser()
 #Env setup
 parser.add_argument("--gpu",type=str,default='0',help="gpu number")
+
 #Data setup
 parser.add_argument("--data_path",type=str,default="/data1/jyhwang/SR/", help="data_path")
 parser.add_argument("--dataset",type=str,default="CDs",help="dataset")
 parser.add_argument("--save",choices=[True, False],default=True)
+
 #Experiment setup
 parser.add_argument("--max_epoch",type=int,default=200,help="training epoch")
 parser.add_argument("--lr",type=float,default=0.0005,help="learning_rate")
@@ -40,7 +49,12 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp','nip','amip','asmip'],default='bert4rec')
+parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp','ct4rec','cbit','tc4rec',
+                                       'nip','nmip','pmip','mip','amip','asmip'],default='bert4rec')
+parser.add_argument("--shots",type=int, default=1)
+parser.add_argument("--alpha",type=float,default=1.0, help= " loss weight")
+parser.add_argument("--beta", type=float,default=1.0, help= "loss weight")
+parser.add_argument("--gamma",type=float,default=1.0, help= " loss weight")
 parser.add_argument("--dropout",type=float,default=0.1,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
 parser.add_argument("--encoder_layers", type=int, default=2, help="# of encoder layers")
@@ -78,8 +92,13 @@ elif args.model == 'fmlp':
     model = FMLP(args).cuda()
 elif args.model == 'hgn':
     model = HGN(args).cuda()
-
-
+elif args.model == 'ct4rec':
+    model = CT4REC(args).cuda()
+elif args.model == 'cbit':
+    model = CBIT(args).cuda()
+elif args.model == 'tc4rec':
+    model = TC4REC(args).cuda()
+    
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
 
@@ -105,13 +124,44 @@ for epoch in range(1,args.max_epoch+1):
 
         negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
         batch_loss=[]
-
-        task_loss = model.loss(users,
-                               sequence,
-                               positive, #B,1
-                               negative) #B,N
-
-        batch_loss = task_loss.mean()
+        
+        if args.model == 'ct4rec':
+            basic_loss, rd_loss, dr_loss = model.loss(users,
+                                                      sequence,
+                                                      positive, #B,1
+                                                      negative) #B,N
+            
+            batch_loss = basic_loss + args.alpha*rd_loss + args.beta*dr_loss
+            
+            
+        elif args.model == 'cbit': 
+            basic_loss, contrastive_loss = model.loss(users,
+                                                       sequence,
+                                                       positive,
+                                                       negative)
+            
+            batch_loss = basic_loss + args.alpha*contrastive_loss
+        elif args.model == 'tc4rec':
+            amip_loss, mip_loss, consistency_loss = model.loss(users,
+                                                       sequence,
+                                                       positive,
+                                                       negative)
+            
+            #print(consistency_loss)
+            batch_loss = amip_loss + args.alpha*mip_loss + args.beta*consistency_loss
+        
+        elif args.model == 'amip':
+            amip_loss = model.loss(users,sequence,positive,negative)
+            batch_loss = amip_loss
+            
+        elif args.model == 'sasrec':
+            basic_loss = model.loss(users,
+                                    sequence,
+                                    positive,
+                                    negative)
+            
+            batch_loss = basic_loss
+            
         optimizer.zero_grad()
         batch_loss.backward()
         optimizer.step()#B,L,L
@@ -127,7 +177,7 @@ for epoch in range(1,args.max_epoch+1):
             print("[RECALL ]@20:: %.4lf"%(result20['recall']))
             print("[NDCG   ]@20:: %.4lf"%(result20['ndcg']))
             print("[MRR    ]@20:: %.4lf"%(result20['mrr']))
-        
+            
         if best_valid <= result20['ndcg']:
             best_valid = result20['ndcg']
             model_state = copy.deepcopy(model.state_dict())

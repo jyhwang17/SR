@@ -13,11 +13,11 @@ from utils.inference_utils import filter_sequence
 from utils.loader_utils import load_mapping_info
 from collections import namedtuple
 
-class AMIP(nn.Module):
+class PMIP(nn.Module):
     
     def __init__(self, args):
         
-        super(AMIP, self).__init__()
+        super(PMIP, self).__init__()
         
         self.args = args
         self.mask_prob = self.args.mask_prob
@@ -241,13 +241,14 @@ class AMIP(nn.Module):
             transformer_rep = self.get_contextualized_rep(user_indices, masked_item_seq_indices)
             
             # Get score (next-token)
+            '''
             rep4next  = transformer_rep[loss_mask_next].unsqueeze(1) # [*,1,dims]
             tgt_ebd = self.V(next_tgt_item_indices)[loss_mask_next]
             score_next = rep4next.bmm(tgt_ebd.permute([0,2,1])).squeeze(1) #[*,1+N]
             numerator_next =  score_next[:,[0]] # (*, 1)
             denominator_next = (score_next[:,1:].exp().sum(-1,keepdims=True) + score_next[:,[0]].exp() ).log() #[*, 1]
             loss_next = -((numerator_next - denominator_next))
-            
+            '''
             # (prev-token)
             rep4prev  = transformer_rep[loss_mask_prev].unsqueeze(1) # [*,1,dims]
             tgt_ebd = self.V(prev_tgt_item_indices)[loss_mask_prev]
@@ -255,7 +256,7 @@ class AMIP(nn.Module):
             numerator_prev =  score_prev[:,[0]] # (*, 1)
             denominator_prev = (score_prev[:,1:].exp().sum(-1,keepdims=True) + score_prev[:,[0]].exp() ).log() #[*, 1]
             loss_prev = -((numerator_prev - denominator_prev))
-            amip_loss = torch.cat((amip_loss, loss_next, loss_prev),0)
+            amip_loss = torch.cat((amip_loss, loss_prev),0)
             '''
             rep4self = transformer_rep[loss_mask_self].unsqueeze(1)
             tgt_ebd = self.V(self_tgt_item_indices)[loss_mask_self]

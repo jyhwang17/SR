@@ -1,10 +1,12 @@
-#문제의 코드
 import numpy as np
 import torch
 import time
 import copy
 from tqdm import tqdm
 from collections import defaultdict
+from torch.distributions import Categorical
+import torch.nn as nn
+from collections import Counter
 
 def _get_recall(batch_hits, num_tests, cond):
 
@@ -65,6 +67,8 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
         gt_mat = torch.sparse_coo_tensor(ind, val, (dataset.num_seqs, dataset.num_items)).cuda()
         
         last_subseqs = torch.LongTensor(dataset.valid_last_subseqs[:,1:]).cuda()
+        gt_analysis = torch.cuda.LongTensor(dataset.valid_items)
+        
     if scenario == 'test':
         coo = dataset.test_seen_mat.tocoo()
         ind = torch.LongTensor([coo.row.tolist(), coo.col.tolist()])
@@ -77,6 +81,7 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
         gt_mat = torch.sparse_coo_tensor(ind, val, (dataset.num_seqs, dataset.num_items)).cuda()
         #check last subseqs
         last_subseqs = torch.LongTensor(dataset.test_last_subseqs[:,1:]).cuda()
+        gt_analysis = torch.cuda.LongTensor(dataset.test_items)
     
     #prepare sequences
     seq_indices = torch.split(torch.LongTensor(seq_list),256)
@@ -86,6 +91,14 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
     ndcg = torch.cuda.DoubleTensor()
     mrr = torch.cuda.DoubleTensor()
     
+    #additional metric for analysis
+    hits_pop = torch.cuda.DoubleTensor()
+    topk_pop = torch.cuda.DoubleTensor()
+    entropy = torch.cuda.DoubleTensor()
+    
+    smx = torch.nn.Softmax(dim=1)
+    item_pop = torch.cuda.DoubleTensor(dataset.item_pop)
+    
     with torch.no_grad():
         for i, batch_seq_indices in enumerate(tqdm(seq_indices, desc="Evaluation", disable = True)):
             batch_seq_indices = batch_seq_indices.cuda()
@@ -94,8 +107,11 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
                                      last_subseqs[batch_seq_indices],
                                      all_item_indices, # NX1
                                      pred_opt='eval')
-            #print(predicted_scores)
-            #breakpoint()
+            
+           
+            
+            batch_entropy = Categorical(probs = smx(batch_scores[:,1:]) ).entropy()
+
             batch_seen_array = torch.index_select(seen_mat, 0, batch_seq_indices).to_dense()
             batch_scores.unsqueeze(0)[:, batch_seen_array > 0 ] = -1000.0 # ignore seen items
             batch_topk = torch.topk(batch_scores, k = topk, dim=1, sorted=True).indices
@@ -104,7 +120,7 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
             
             num_tests = batch_gt_array.sum(1,keepdims=True)
             batch_hits = torch.gather(batch_gt_array, 1, batch_topk)
-
+            
             #select validation user
             cond = (num_tests > 0.).flatten()
             
@@ -116,5 +132,17 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
             
             batch_mrr = _get_rr(batch_hits, cond)
             mrr = torch.cat((mrr, batch_mrr.type('torch.DoubleTensor').cuda()), 0)
-
-    return {"recall":recall.mean(),"ndcg":ndcg.mean(), "mrr":mrr.mean() }
+            
+            
+            #for analysis.
+            batch_hits_mask = batch_hits.sum(1).bool()
+            batch_gt = gt_analysis[batch_seq_indices]
+            
+            hits_items = batch_gt[batch_hits_mask].flatten()
+            hits_pop = torch.cat((hits_pop, item_pop[hits_items]),0)
+            topk_pop = torch.cat((topk_pop, item_pop[batch_topk].flatten()),0)
+            
+            entropy = torch.cat((entropy, batch_entropy), 0)
+            
+    return {"recall":recall.mean(),"ndcg":ndcg.mean(), "mrr":mrr.mean(), "entropy":entropy.mean(),
+            "hits_list":recall, "hits_pop": hits_pop.mean(), "topk_pop": topk_pop.mean()}

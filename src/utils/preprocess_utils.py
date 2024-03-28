@@ -163,7 +163,7 @@ def split_seqs(seqs, train_ratio):
         
     return early_seqs, later_seqs
 
-def extract_valid_seqs(early_seqs, later_seqs):
+def extract_valid_seqs(early_seqs, later_seqs, train_popularity):
     
     ret_seq = []
     ret_item = []
@@ -175,7 +175,7 @@ def extract_valid_seqs(early_seqs, later_seqs):
         valid_item = []
         for iidx, item in enumerate(seq):
             
-            if item not in seen:
+            if item not in seen and train_popularity[item] > 0:
                 valid_seq = early_seqs[uidx][:] + later_seqs[uidx][:iidx]
                 valid_item.append(later_seqs[uidx][iidx])
                 break

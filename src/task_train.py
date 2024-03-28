@@ -13,8 +13,14 @@ from model.bert4rec import BERT4REC
 from model.hgn import HGN
 from model.fmlp import FMLP
 from model.nip import NIP
+######################################
+from model.mip import MIP
+from model.nmip import NMIP
+from model.pmip import PMIP
 from model.amip import AMIP
+######################################
 from model.asmip import ASMIP
+
 import sys
 from utils.loader_utils import SEQDataset
 from utils.eval_utils import evaluate_topk
@@ -40,9 +46,10 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['asmip'],default='asmip')
+parser.add_argument("--model",choices=['nip','nmip','pmip','amip','asmip'],default='asmip')
 parser.add_argument("--shots",type = int, default = 1, help = "shots")
 parser.add_argument("--alpha",type = float, default = 0.1, help = "")
+parser.add_argument("--beta",type = float, default = 0.1, help = "")
 parser.add_argument("--dropout",type = float, default = 0.1,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
 parser.add_argument("--encoder_layers", type=int, default=2, help="# of encoder layers")
@@ -66,8 +73,18 @@ dataset = SEQDataset(args)
 args.num_seqs = args.num_users = dataset.num_users
 args.num_items = dataset.num_items
 
-model = ASMIP(args).cuda()
-
+if args.model =='nip':
+    model = NIP(args).cuda()
+elif args.model == 'mip':
+    model = MIP(args).cuda()
+elif args.model == 'nmip':
+    model = NMIP(args).cuda()
+elif args.model == 'pmip':
+    model = PMIP(args).cuda()
+elif args.model == 'amip':
+    model = AMIP(args).cuda()
+elif args.model == 'asmip':
+    model = ASMIP(args).cuda()
 
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
@@ -79,6 +96,11 @@ model_state = defaultdict(int)
 best_epoch = defaultdict(int)
 neg_sampler = NEGSampler(args)
 stop_cnt = 0
+
+entropy_result=[]
+pop_result=[]
+topk_pop_result=[]
+hits_list = []
 
 for epoch in range(1,args.max_epoch+1):
 
@@ -94,34 +116,77 @@ for epoch in range(1,args.max_epoch+1):
 
         negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
         batch_loss=[]
+        
+        if args.model == 'nip':
+            nip_loss = model.loss(users,
+                                  sequence,
+                                  positive,
+                                  negative)
+            batch_loss = nip_loss.mean()
+        elif args.model == 'mip':
+            mip_loss = model.loss(users,
+                                  sequence,
+                                  positive,
+                                  negative)
+            batch_loss = mip_loss.mean()
+        elif args.model == 'nmip':
+            nmip_loss = model.loss(users,
+                                   sequence,
+                                   positive,
+                                   negative)
+            batch_loss = nmip_loss.mean()
+        elif args.model == 'pmip':
+            pmip_loss = model.loss(users,
+                                   sequence,
+                                   positive,
+                                   negative)
+            batch_loss = pmip_loss.mean()
+        elif args.model == 'amip':
+            amip_loss = model.loss(users,
+                                   sequence,
+                                   positive,
+                                   negative)
+            batch_loss = amip_loss.mean()
+        elif args.model =='asmip':
+            amip_loss, mip_loss = model.loss(users,
+                                            sequence,
+                                            positive, #B,1
+                                            negative) #B,N
 
-        amip_loss, mip_loss = model.loss(users,
-                                        sequence,
-                                        positive, #B,1
-                                        negative) #B,N
-
-        batch_loss = amip_loss.mean() + args.alpha*mip_loss.mean()
+            batch_loss = amip_loss.mean() + args.alpha*mip_loss.mean()
         
         optimizer.zero_grad()
         batch_loss.backward()
         optimizer.step()#B,L,L
 
     model.eval()
-    if epoch % 3 == 0:
+    if epoch % 2 == 1:
+        
         validation_mask = (torch.LongTensor(dataset.valid_last_subseqs).sum(1) > 0)
         users = torch.arange(dataset.num_seqs)
-        
         result20 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
+        entropy_result.append(float(result20['entropy']))
+        pop_result.append(float(result20['hits_pop']))
+        topk_pop_result.append(float(result20['topk_pop']))
         
         if args.mode == 'develop':
             print("Validation[%s/%s]"%(epoch,args.max_epoch))
-            print("[RECALL ]@20:: %.4lf"%(result20['recall']))
-            print("[NDCG   ]@20:: %.4lf"%(result20['ndcg']))
-            print("[MRR    ]@20:: %.4lf"%(result20['mrr']))
-        
+            print("[RECALL ]@20 :: %.4lf"%(result20['recall']))
+            print("[NDCG   ]@20 :: %.4lf"%(result20['ndcg']))
+            print("[MRR    ]@20 :: %.4lf"%(result20['mrr']))
+            print("[Entropy]    :: %.4lf"%(result20['entropy']))
+            print("[Avg.HitsPop]:: %.4lf"%(result20['hits_pop']))
+            print("[Avg.topkPop]:: %.4lf"%(result20['topk_pop']))
+            
+            
         if best_valid['recall@20'] <= result20['recall']:
             best_valid['recall@20'] = result20['recall']
+            best_valid['ndcg@20'] = result20['ndcg']
+            best_valid['mrr@20'] = result20['mrr']
             
+            hits_list = result20['hits_list']
+            
+            '''
             if args.mode == 'tune':
                 result10 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
                 result50 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
@@ -135,27 +200,39 @@ for epoch in range(1,args.max_epoch+1):
                 best_valid['ndcg@20'] = result20['ndcg']
                 best_valid['ndcg@50'] = result50['ndcg']
                 best_valid['ndcg@100'] = result100['ndcg']
-                
+            '''    
             stop_cnt=0
         else:
             stop_cnt= stop_cnt + 1
     
-    if stop_cnt >=15:break
-        
+    if stop_cnt >=1500:break
+
+'''
+print("Entropy:")
+print(entropy_result)
+print("Hits Popularity:")
+print(pop_result)
+print("topk Popularity:")
+print(topk_pop_result)
+
+#print("Hits_List:")
+#print(list(hits_list.flatten()))
+print("Validation Performance")
+print("[RECALL ]@20:: %.4lf"%(best_valid["recall@20"]))
+print("[NDCG   ]@20:: %.4lf"%(best_valid["ndcg@20"]))
+'''
+
 if args.mode == 'tune':
     print(args)
 
-    objs = {"hyperparams": args}
+    objs = {"hyperparams": args, "entropy": entropy_result}
+    
     with open('./knowledge/'+'%s'%(args.dataset)+'/hyperparams/'+'%s_%s-%s_%.4lf'%(args.model, args.window_length, args.dims, float(best["ndcg@20"]))+'.pkl','wb') as f:
         pickle.dump(objs, f)
+    
     print("Validation Performance")
     
-    print("[RECALL ]@10:: %.4lf"%(best_valid["recall@10"]))
     print("[RECALL ]@20:: %.4lf"%(best_valid["recall@20"]))
-    print("[RECALL ]@50:: %.4lf"%(best_valid["recall@50"]))
-    print("[RECALL ]@100:: %.4lf"%(best_valid["recall@100"]))
-    
-    print("[NDCG   ]@10:: %.4lf"%(best_valid["ndcg@10"]))
     print("[NDCG   ]@20:: %.4lf"%(best_valid["ndcg@20"]))
-    print("[NDCG   ]@50:: %.4lf"%(best_valid["ndcg@50"]))
-    print("[NDCG   ]@100:: %.4lf"%(best_valid["ndcg@100"]))
+    print("[MRR    ]@50:: %.4lf"%(best_valid["ndcg@20"]))
+    
