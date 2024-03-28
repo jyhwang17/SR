@@ -10,7 +10,7 @@ do
                                 do
                                         for alpha in $3
                                         do
-                                                for mask_prob in 0.2 0.25 0.3 0.35
+                                                for mask_prob in $4
                                                 do
                                                         for shots in 5
                                                         do
