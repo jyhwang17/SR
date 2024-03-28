@@ -25,6 +25,7 @@ do
                                                             --window_length ${window_length}\
                                                             --negs 200\
                                                             --dims ${dims}\
+                                                            --alpha ${alpha}\                                                            
                                                             --mask_prob ${mask_prob}\
                                                             --shots ${shots}\
                                                             --dropout 0.3 >> \
