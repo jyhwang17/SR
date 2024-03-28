@@ -205,7 +205,7 @@ for epoch in range(1,args.max_epoch+1):
         else:
             stop_cnt= stop_cnt + 1
     
-    if stop_cnt >=1500:break
+    if stop_cnt >=20:break
 
 '''
 print("Entropy:")
