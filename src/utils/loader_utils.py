@@ -108,6 +108,18 @@ class SEQDataset(Dataset):
             self.test_items = data_dict["test_items"]
             self.item_pop = data_dict["item_pop"]
             
+            #self.ladj_mat = data_dict["ladj_mat"]
+            #self.radj_mat = data_dict["radj_mat"]
+            self.adj_mat = data_dict["adj_mat"]
+            
+            self.ladj_mat1 = data_dict["ladj_mat1"]
+            self.ladj_mat2 = data_dict["ladj_mat2"]
+            self.ladj_mat3 = data_dict["ladj_mat3"]
+            
+            self.radj_mat1 = data_dict["radj_mat1"]
+            self.radj_mat2 = data_dict["radj_mat2"]
+            self.radj_mat3 = data_dict["radj_mat3"]
+            
         except Exception as e:
             print('load error', e)
         self.num_seqs = self.num_users

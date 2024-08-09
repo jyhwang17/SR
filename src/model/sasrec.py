@@ -33,7 +33,22 @@ class SASREC(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.dropout_layer = nn.Dropout(self.args.dropout)
         self.layer_norm = nn.LayerNorm(self.args.dims)
-    
+        
+        self.apply(self._init_weights)
+        self.V.weight.data[0] = 0.
+
+
+    def _init_weights(self, module):
+        
+        """ Initialize the weights """
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            module.weight.data.normal_(mean=0.0, std=(1./self.args.dims))
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+            
     def get_attention_mask(self, item_seq, bidirectional = False):
         """Generate left-to-right uni-directional or bidirectional attention mask for multi-head attention."""
         attention_mask = (item_seq != 0)
@@ -88,8 +103,10 @@ class SASREC(nn.Module):
         
         B,L = item_seq_indices.size() 
         total_sequence = torch.cat((item_seq_indices, pos_item_indices),1) #[B,L+1]
+        
         neg_tgt_item_indices = neg_item_indices.unsqueeze(1).expand(-1,item_seq_indices.size(1),-1) #[B,L,L]
-        neg_tgt_item_indices = torch.diagonal(neg_tgt_item_indices, offset = 0, dim1=1, dim2=2).unsqueeze(-1)
+
+        #neg_tgt_item_indices = torch.diagonal(neg_tgt_item_indices, offset = 0, dim1=1, dim2=2).unsqueeze(-1)
         
         pad_filter = (total_sequence.sum(-1)!=0)
         total_sequence = total_sequence[pad_filter]
@@ -113,7 +130,7 @@ class SASREC(nn.Module):
         pos_loss = bce(pos_score, torch.ones_like(pos_score))
         
         neg_score = sigm(neg_score)[loss_mask]# B,L,N
-        neg_loss = bce(neg_score, torch.zeros_like(neg_score)).sum(-1).flatten()
-        
+        neg_loss = bce(neg_score, torch.zeros_like(neg_score)).mean(-1).flatten()
+
         loss = torch.cat((pos_loss,neg_loss),0)
         return loss.mean()
