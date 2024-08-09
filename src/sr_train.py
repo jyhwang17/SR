@@ -207,18 +207,18 @@ if args.mode == 'tune':
         pickle.dump(objs, f)
     
     with open('./log/%s/%s_%s_%s.txt'%(args.dataset,args.model,args.window_length,args.dims) ,'w') as f:
-        f.write(args)
-        f.write("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
-        f.write("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
-        f.write("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
+        f.write(str(args))
+        f.write("[RECALL ]@10:: %.4lf\n"%(best["recall@10"]))
+        f.write("[RECALL ]@20:: %.4lf\n"%(best["recall@20"]))
+        f.write("[RECALL ]@50:: %.4lf\n"%(best["recall@50"]))
     
-        f.write("[NDCG   ]@10:: %.4lf"%(best["ndcg@10"]))
-        f.write("[NDCG   ]@20:: %.4lf"%(best["ndcg@20"]))
-        f.write("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
+        f.write("[NDCG   ]@10:: %.4lf\n"%(best["ndcg@10"]))
+        f.write("[NDCG   ]@20:: %.4lf\n"%(best["ndcg@20"]))
+        f.write("[NDCG   ]@50:: %.4lf\n"%(best["ndcg@50"]))
     
-        f.write("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
-        f.write("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
-        f.write("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
+        f.write("[MRR    ]@10:: %.4lf\n"%(best["mrr@10"]))
+        f.write("[MRR    ]@20:: %.4lf\n"%(best["mrr@20"]))
+        f.write("[MRR    ]@50:: %.4lf\n"%(best["mrr@50"]))
         f.close()
     #print(args)
     
