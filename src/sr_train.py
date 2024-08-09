@@ -162,6 +162,7 @@ for epoch in range(1,args.max_epoch+1):
         negative = neg_sampler.sample_negative_items_online(sorted_sequence, args.negs)
         batch_loss=[]
         consistency = []
+        
         if args.model == 'proposal'or args.model == 'wwwproposal':
             amip_loss, aug_amip_loss, mip_loss= model.loss(users,sequence,positive,negative)
 
