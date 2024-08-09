@@ -101,7 +101,7 @@ class ASMIP(nn.Module):
         
         seq_ebd = self.layer_norm(seq_ebd)
         seq_ebd = self.dropout_layer(seq_ebd)
-        seq_rep = self.seq_transformer_encoder(seq_ebd, self.get_attention_mask(item_seq_indices))[-1]
+        seq_rep = self.seq_transformer_encoder(seq_ebd, self.get_attention_mask(item_seq_indices))[0][-1]
         
         return seq_rep
     
@@ -140,7 +140,7 @@ class ASMIP(nn.Module):
         
         return rel_score
     
-    def next_item_prediction(self, user_indices, item_seq_indices, target_item_indices):
+    def next_item_prediction(self, user_indices, item_seq_indices, target_item_indices, pred_opt = 'amip'):
         
         '''
          predict next item score
@@ -166,14 +166,24 @@ class ASMIP(nn.Module):
         
         seq_ebd = self.layer_norm(seq_ebd)
         seq_ebd = self.dropout_layer(seq_ebd)
-        seq_rep = self.seq_transformer_encoder(seq_ebd, self.get_attention_mask(item_seq_indices))[-1]
+        seq_rep = self.seq_transformer_encoder(seq_ebd, self.get_attention_mask(item_seq_indices))[0][-1]
         
+        #
         # rec_heads: batch x dims (e.g., 500, 64)
         # tgt_ebd : all_Items x dims (e.g., 32980, 1, 64)
-        rec_heads = seq_rep[:,-2,:]
+        if pred_opt == 'amip':
+            rec_heads = seq_rep[:,-2,:]
+            entropy1,entropy2 = self.seq_transformer_encoder(seq_ebd, self.get_attention_mask(item_seq_indices))[2] # item
+        elif pred_opt =='mip':
+            rec_heads = seq_rep[:,-1,:]
+            entropy1, entropy2 = self.seq_transformer_encoder(seq_ebd, self.get_attention_mask(item_seq_indices))[1] # mask
+        else:
+            rec_heads = seq_rep[:,-2,:]
+            entropy1,entropy2 = self.seq_transformer_encoder(seq_ebd, self.get_attention_mask(item_seq_indices))[2] # item
         
         rel_score = rec_heads.mm(tgt_ebd.squeeze(1).t()) # batch x all_Items
-        return rel_score
+        
+        return rel_score, entropy1, entropy2
         
     def forward(self, user_indices, item_seq_indices, target_item_indices, pred_opt = 'eval'):
 
@@ -188,6 +198,10 @@ class ASMIP(nn.Module):
             #refactoring..
             return None
             #return self.masked_prediction(user_indices, item_seq_indices, target_item_indices, input_mask = None)
+        elif pred_opt == 'mip':
+            return self.next_item_prediction(user_indices, item_seq_indices, target_item_indices, 'mip')
+        elif pred_opt == 'amip':
+            return self.next_item_prediction(user_indices, item_seq_indices, target_item_indices, 'amip')
         else:
             return self.next_item_prediction(user_indices, item_seq_indices, target_item_indices)
     

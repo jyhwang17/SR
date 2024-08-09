@@ -217,6 +217,7 @@ class MultiHeadAttention(nn.Module):
         self.LayerNorm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.out_dropout = nn.Dropout(hidden_dropout_prob)
         self.cnt = 0
+        
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
@@ -242,10 +243,9 @@ class MultiHeadAttention(nn.Module):
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         # [batch_size heads seq_len seq_len] scores
         # [batch_size 1 1 seq_len]
-        #position_bias = self.relative_encoder(attention_scores.size(2),attention_scores.size(3))
         
-        attention_scores = attention_scores + attention_mask #+ position_bias
-        #print(self.relative_encoder(attention_scores.size(2),attention_scores.size(3)))
+        #position_bias = self.relative_encoder(attention_scores.size(2),attention_scores.size(3))
+        attention_scores = attention_scores + attention_mask # + position_bias
         # Normalize the attention scores to probabilities.
         attention_probs = self.softmax(attention_scores)
 

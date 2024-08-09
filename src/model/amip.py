@@ -34,8 +34,19 @@ class AMIP(nn.Module):
         self.P = nn.Embedding(self.args.window_length+1, self.args.dims , padding_idx=0)
         self.P.weight.data.normal_(0., 1./self.V.embedding_dim)
         
-
-
+        self.T = nn.Embedding(3, self.args.dims)# Task-specific embedding
+        self.T.weight.data.normal_(0., 1./self.T.embedding_dim)
+        
+        self.T2 = nn.Embedding(3, self.args.dims)# Task-specific embedding
+        self.T2.weight.data.normal_(0., 1./self.T.embedding_dim)
+        
+        self.lin = nn.Linear(self.args.dims*2, self.args.dims)
+        
+        self.next_norm = nn.LayerNorm(self.args.dims)
+        self.prev_norm = nn.LayerNorm(self.args.dims)
+        
+        self.self_norm = nn.LayerNorm(self.args.dims)
+        
         self.seq_transformer_encoder = TE(n_layers = self.args.encoder_layers,
                                           n_heads = 2,
                                           hidden_size = self.args.dims,
@@ -48,6 +59,10 @@ class AMIP(nn.Module):
         self.mask_index = torch.cuda.LongTensor([self.args.num_items])
         
         self.dropout_layer = nn.Dropout(self.args.dropout)
+        self.next_dropout_layer= nn.Dropout(self.args.dropout)
+        self.prev_dropout_layer= nn.Dropout(self.args.dropout)
+        self.self_dropout_layer= nn.Dropout(self.args.dropout)
+        
         self.act = nn.GELU()
         self.layer_norm = nn.LayerNorm(self.args.dims)
 
@@ -170,7 +185,23 @@ class AMIP(nn.Module):
         
         # rec_heads: batch x dims (e.g., 500, 64)
         # tgt_ebd : all_Items x dims (e.g., 32980, 1, 64)
-        rec_heads = seq_rep[:,-2,:]
+        rep4next = seq_rep[:,-2,:]
+        next_layer = self.T.weight[0]
+        next_layer = next_layer.expand_as(rep4next)
+        next_bias = self.T2.weight[0]
+        next_bias = next_bias.expand_as(rep4next)
+        rep4next = self.next_norm(next_layer*rep4next + next_bias + rep4next)
+        
+        rep4self = seq_rep[:,-1,:]
+        self_layer = self.T.weight[2]
+        self_layer = self_layer.expand_as(rep4self)
+        self_bias = self.T2.weight[2]
+        self_bias = self_bias.expand_as(rep4self)
+        rep4self = self.self_norm(self_layer*rep4self + self_bias + rep4self)
+        
+        rec_heads = rep4next + rep4self
+        #rec_heads = self.task_norm(self.lin(torch.cat([rep4next,next_embedding],-1)) + rep4next)   
+        #rec_heads = seq_rep[:,-2,:] + self.T.weight[0]
         
         rel_score = rec_heads.mm(tgt_ebd.squeeze(1).t()) # batch x all_Items
         return rel_score
@@ -239,9 +270,20 @@ class AMIP(nn.Module):
             
             #Get representation
             transformer_rep = self.get_contextualized_rep(user_indices, masked_item_seq_indices)
+            item_loss_mask = (masked_item_seq_indices != 0) & (masked_item_seq_indices != self.mask_index)
+            loss_mask_next = loss_mask_next & item_loss_mask
+            loss_mask_prev = loss_mask_prev & item_loss_mask
             
             # Get score (next-token)
+
             rep4next  = transformer_rep[loss_mask_next].unsqueeze(1) # [*,1,dims]
+            
+            next_layer = self.T.weight[0]
+            next_layer = next_layer.expand_as(rep4next)
+            next_bias = self.T2.weight[0]
+            next_bias = next_bias.expand_as(rep4next)
+            rep4next = self.next_dropout_layer(self.next_norm((next_layer*rep4next + next_bias + rep4next)))
+            
             tgt_ebd = self.V(next_tgt_item_indices)[loss_mask_next]
             score_next = rep4next.bmm(tgt_ebd.permute([0,2,1])).squeeze(1) #[*,1+N]
             numerator_next =  score_next[:,[0]] # (*, 1)
@@ -250,20 +292,32 @@ class AMIP(nn.Module):
             
             # (prev-token)
             rep4prev  = transformer_rep[loss_mask_prev].unsqueeze(1) # [*,1,dims]
+            prev_layer = self.T.weight[1]
+            prev_layer = prev_layer.expand_as(rep4prev)
+            prev_bias = self.T2.weight[1]
+            prev_bias = prev_bias.expand_as(rep4prev)
+            
+            rep4prev = self.prev_dropout_layer(self.prev_norm((prev_layer*rep4prev + prev_bias + rep4prev)))
+            
             tgt_ebd = self.V(prev_tgt_item_indices)[loss_mask_prev]
             score_prev = rep4prev.bmm(tgt_ebd.permute([0,2,1])).squeeze(1) #[*,1+N]
             numerator_prev =  score_prev[:,[0]] # (*, 1)
             denominator_prev = (score_prev[:,1:].exp().sum(-1,keepdims=True) + score_prev[:,[0]].exp() ).log() #[*, 1]
             loss_prev = -((numerator_prev - denominator_prev))
             amip_loss = torch.cat((amip_loss, loss_next, loss_prev),0)
-            '''
+            
             rep4self = transformer_rep[loss_mask_self].unsqueeze(1)
+            self_layer = self.T.weight[2]
+            self_layer = self_layer.expand_as(rep4self)
+            self_bias = self.T2.weight[2]
+            self_bias = self_bias.expand_as(rep4self)
+            rep4self = self.self_dropout_layer(self.self_norm((self_layer*rep4self + self_bias + rep4self)))
+            
             tgt_ebd = self.V(self_tgt_item_indices)[loss_mask_self]
             score_self = rep4self.bmm(tgt_ebd.permute([0,2,1])).squeeze(1)
             numerator_self = score_self[:,[0]]
             denominator_self = (score_self[:,1:].exp().sum(-1,keepdims=True) + score_self[:,[0]].exp() ).log() #[*, 1]
             loss_self = -((numerator_self - denominator_self))
+            amip_loss = torch.cat((amip_loss, 0.3*loss_self),0)
             
-            mip_loss = torch.cat((mip_loss, loss_self),0)
-            '''
         return amip_loss.mean()

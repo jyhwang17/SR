@@ -46,7 +46,7 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['nip','nmip','pmip','amip','asmip'],default='asmip')
+parser.add_argument("--model",choices=['nip','nmip','pmip','amip','asmip','mip'],default='asmip')
 parser.add_argument("--shots",type = int, default = 1, help = "shots")
 parser.add_argument("--alpha",type = float, default = 0.1, help = "")
 parser.add_argument("--beta",type = float, default = 0.1, help = "")
@@ -100,8 +100,9 @@ stop_cnt = 0
 entropy_result=[]
 pop_result=[]
 topk_pop_result=[]
-hits_list = []
-
+hits_list20 = []
+hits_list50 = []
+hits_list100 = []
 for epoch in range(1,args.max_epoch+1):
 
     model.train()
@@ -164,6 +165,7 @@ for epoch in range(1,args.max_epoch+1):
         
         validation_mask = (torch.LongTensor(dataset.valid_last_subseqs).sum(1) > 0)
         users = torch.arange(dataset.num_seqs)
+        
         result20 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
         entropy_result.append(float(result20['entropy']))
         pop_result.append(float(result20['hits_pop']))
@@ -184,7 +186,14 @@ for epoch in range(1,args.max_epoch+1):
             best_valid['ndcg@20'] = result20['ndcg']
             best_valid['mrr@20'] = result20['mrr']
             
-            hits_list = result20['hits_list']
+            hits_list20 = result20['hits_list']
+            
+            if epoch>30:
+                result50 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 50)
+                hits_list50 = result50['hits_list']
+                result100 = evaluate_topk(model, users[validation_mask], dataset, 'valid',100)
+                hits_list100 = result100['hits_list']
+                
             
             '''
             if args.mode == 'tune':
@@ -206,6 +215,11 @@ for epoch in range(1,args.max_epoch+1):
             stop_cnt= stop_cnt + 1
     
     if stop_cnt >=20:break
+
+        
+objs = {"entropy":entropy_result, "hits@20": hits_list20, "hits@50": hits_list50, "hits@100": hits_list100}
+with open('./knowledge/'+'%s'%(args.dataset)+'/analysis/'+'%s_%s-%s_%.4lf'%(args.model, args.window_length, args.dims,float(best_valid["recall@20"]))+'.pkl','wb') as f:
+    pickle.dump(objs, f)
 
 '''
 print("Entropy:")

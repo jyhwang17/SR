@@ -105,7 +105,7 @@ class MIP(nn.Module):
         position_ids = position_ids.unsqueeze(0).expand_as(item_seq_indices)
         position_ebd = self.P(position_ids)
         
-        seq_ebd = self.V(item_seq_indices) + position_ebd
+        seq_ebd = self.V(item_seq_indices)# + position_ebd
         
         seq_ebd = self.layer_norm(seq_ebd)
         seq_ebd = self.dropout_layer(seq_ebd)
@@ -130,7 +130,7 @@ class MIP(nn.Module):
         position_ebd = self.P(position_ids)
         
         tgt_ebd = self.V(target_item_indices)
-        seq_ebd = self.V(item_seq_indices) + position_ebd
+        seq_ebd = self.V(item_seq_indices)# + position_ebd
         
         seq_ebd = self.layer_norm(seq_ebd)
         seq_ebd = self.dropout_layer(seq_ebd)
@@ -170,7 +170,7 @@ class MIP(nn.Module):
         
         tgt_ebd = self.V(target_item_indices) #[N(1), 1, 64]
         
-        seq_ebd = self.V(item_seq_indices)+position_ebd
+        seq_ebd = self.V(item_seq_indices)#+position_ebd
         
         seq_ebd = self.layer_norm(seq_ebd)
         seq_ebd = self.dropout_layer(seq_ebd)

@@ -18,7 +18,7 @@ class NIP(nn.Module):
         
         self.V = nn.Embedding(self.args.num_items, self.args.dims, padding_idx = 0)
         self.V.weight.data.normal_(0., 1./self.V.embedding_dim)
-        self.V.weight.data[0] = 0.
+        
         
         self.P = nn.Embedding(self.args.window_length, self.args.dims)
         self.P.weight.data.normal_(0., 1./self.P.embedding_dim)
@@ -37,7 +37,22 @@ class NIP(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.dropout_layer = nn.Dropout(self.args.dropout)
         self.layer_norm = nn.LayerNorm(self.args.dims)
-    
+         
+        self.apply(self._init_weights)
+        self.V.weight.data[0] = 0.
+        
+    def _init_weights(self, module):
+        
+        """ Initialize the weights """
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+
+            module.weight.data.normal_(mean=0.0, std=1./self.args.dims )
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+            
     def get_attention_mask(self, item_seq, bidirectional = False):
         """Generate left-to-right uni-directional or bidirectional attention mask for multi-head attention."""
         attention_mask = (item_seq != 0)

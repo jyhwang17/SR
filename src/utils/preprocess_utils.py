@@ -181,6 +181,8 @@ def extract_valid_seqs(early_seqs, later_seqs, train_popularity):
                 break
             seen.add(later_seqs[uidx][iidx])# 추가된 라인.
             
+        
+        
         ret_seq.append(valid_seq)
         ret_item.append(valid_item)
         
