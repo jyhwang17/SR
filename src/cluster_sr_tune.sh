@@ -26,7 +26,7 @@ do
                                                                 --window_length ${window_length}\
                                                                 --negs 200\
                                                                 --dims ${dims}\
-                                                                --alpha ${alpha}\                                                            
+                                                                --alpha ${alpha}\
                                                                 --mask_prob ${mask_prob}\
                                                                 --dropout ${dropout} >> \
                                                                 'log/'${dataset}'/'${model}'_'${window_length}'_'${dims}.log
