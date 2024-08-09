@@ -178,6 +178,9 @@ for epoch in range(1,args.max_epoch+1):
     
     if stop_cnt >=40: break
 
+        
+        
+'''
 print("-------------------------")
 print("[Best VALID EPOACH]:: %s"%(int(best_epoch)))
 print("[RECALL ]@20:: %.4lf"%(float(best_valid["recall"])))
@@ -195,7 +198,7 @@ print("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
 print("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
 print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
 print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
-    
+'''    
 if args.mode == 'tune':
     objs = {"hyperparams": args}
     with open('./knowledge/%s/hyperparams/%s_%s-%s_%.4lf_%.4lf'%(args.dataset,
@@ -203,9 +206,23 @@ if args.mode == 'tune':
                                                                  float(best_valid["ndcg"]), float(best["ndcg@20"]))+'.pkl','wb') as f:
         pickle.dump(objs, f)
     
-    print(args)
+    with open('./log/%s/%s_%s_%s.txt'%(args.dataset,args.model,args.window_length,args.dims) ,'w') as f:
+        f.write(args)
+        f.write("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
+        f.write("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
+        f.write("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
     
+        f.write("[NDCG   ]@10:: %.4lf"%(best["ndcg@10"]))
+        f.write("[NDCG   ]@20:: %.4lf"%(best["ndcg@20"]))
+        f.write("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
     
+        f.write("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
+        f.write("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
+        f.write("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
+        f.close()
+    #print(args)
+    
+    '''
     print("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
     print("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
     print("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
@@ -217,7 +234,7 @@ if args.mode == 'tune':
     print("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
     print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
     print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
-    
+    '''
     torch.save(model_state, './knowledge/%s/%s_%s-%s_%.4lf_%.4lf'%(args.dataset,
                                                                    args.model, args.window_length, args.dims,
                                                                    float(best_valid["ndcg"]), float(best["ndcg@20"])))

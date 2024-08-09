@@ -28,9 +28,8 @@ do
                                                                 --dims ${dims}\
                                                                 --alpha ${alpha}\
                                                                 --mask_prob ${mask_prob}\
-                                                                --dropout ${dropout} >> \
-                                                                'log/'${dataset}'/'${model}'_'${window_length}'_'${dims}.log
-
+                                                                --dropout ${dropout}
+                                                                #>> \ 'log/'${dataset}'/'${model}'_'${window_length}'_'${dims}.log
                                                         done
                                                 done
                                         done
