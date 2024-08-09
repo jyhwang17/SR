@@ -206,8 +206,9 @@ if args.mode == 'tune':
                                                                  float(best_valid["ndcg"]), float(best["ndcg@20"]))+'.pkl','wb') as f:
         pickle.dump(objs, f)
     
-    with open('./log/%s/%s_%s_%s.txt'%(args.dataset,args.model,args.window_length,args.dims) ,'w') as f:
+    with open('./log/%s/%s_%s_%s.txt'%(args.dataset,args.model,args.window_length,args.dims) ,'a') as f:
         f.write(str(args))
+        f.write("\n")
         f.write("[RECALL ]@10:: %.4lf\n"%(best["recall@10"]))
         f.write("[RECALL ]@20:: %.4lf\n"%(best["recall@20"]))
         f.write("[RECALL ]@50:: %.4lf\n"%(best["recall@50"]))
