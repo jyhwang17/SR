@@ -10,20 +10,6 @@ from argparse import Namespace
 from tqdm import tqdm
 from model.sasrec import SASREC
 from model.bert4rec import BERT4REC
-from model.hgn import HGN
-from model.fmlp import FMLP
-from model.ct4rec import CT4REC
-from model.nip import NIP
-from model.cbit import CBIT
-from model.tc4rec import TC4REC
-from model.tc4rec2 import TC4REC2
-from model.tc4rec3 import TC4REC3
-from model.cl4srec import CL4SREC
-from model.pmip import PMIP
-from model.nmip import NMIP
-from model.amip import AMIP
-from model.asmip import ASMIP
-from model.proposal import PROPOSAL
 from model.www_proposal import WWWPROPOSAL
 
 import sys
@@ -87,38 +73,10 @@ dataset = SEQDataset(args)
 args.num_seqs = args.num_users = dataset.num_users
 args.num_items = dataset.num_items
 
-
 if args.model == 'sasrec':
     model = SASREC(args).cuda()
-elif args.model == 'nip':
-    model = NIP(args).cuda()
-elif args.model == 'amip':
-    model = AMIP(args).cuda()
-elif args.model == 'asmip':
-    model = ASMIP(args).cuda()
 elif args.model == 'bert4rec':
     model = BERT4REC(args).cuda()
-elif args.model == 'fmlp':
-    model = FMLP(args).cuda()
-elif args.model == 'hgn':
-    model = HGN(args).cuda()
-elif args.model == 'ct4rec':
-    #Self-supervised Learning
-    model = CT4REC(args).cuda()
-elif args.model == 'cl4srec':
-    #Self-supervised Learning
-    model = CL4SREC(args).cuda()
-elif args.model == 'cbit':
-    model = CBIT(args).cuda()
-elif args.model == 'tc4rec':
-    model = TC4REC(args).cuda()
-elif args.model == 'tc4rec2':
-    model = TC4REC2(args).cuda()
-elif args.model == 'tc4rec3':
-    model = TC4REC3(args).cuda()
-elif args.model == 'proposal':
-    model = PROPOSAL(args).cuda()
-
 elif args.model == 'wwwproposal':
     model = WWWPROPOSAL(args).cuda()
     if args.augmentation_rule ==1:
@@ -133,7 +91,7 @@ elif args.model == 'wwwproposal':
     else:
         args.ladj_mat = dataset.adj_mat.cuda()
         args.radj_mat = dataset.adj_mat.cuda()
-        
+
     args.adj_mat = dataset.adj_mat.cuda()
     
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
@@ -168,42 +126,9 @@ for epoch in range(1,args.max_epoch+1):
 
             batch_loss =  amip_loss + args.alpha*aug_amip_loss + args.beta*mip_loss
             
-        if args.model == 'cl4srec': #완성
-            basic_loss, contrastive_loss = model.loss(users,
-                                                      sequence,
-                                                      positive, #B,1
-                                                      negative) #B,N
-            
-            batch_loss = basic_loss + args.alpha*contrastive_loss
-            
-        elif args.model == 'ct4rec':
-            basic_loss, rd_loss, dr_loss = model.loss(users,
-                                                      sequence,
-                                                      positive, #B,1
-                                                      negative) #B,N
-            
-            batch_loss = basic_loss + args.alpha*rd_loss + args.beta*dr_loss
-            
         elif args.model == 'sasrec' or args.model =='nip':
             basic_loss = model.loss(users,sequence,positive,negative) #B,N
             batch_loss = basic_loss
-
-        elif args.model == 'cbit': 
-            basic_loss, contrastive_loss = model.loss(users,
-                                                       sequence,
-                                                       positive,
-                                                       negative)
-            
-            batch_loss = basic_loss + args.alpha*contrastive_loss
-        
-        elif args.model == 'tc4rec' or args.model == 'tc4rec2' or args.model == 'tc4rec3':
-            amip_loss, mip_loss, consistency_loss = model.loss(users,
-                                                               sequence,
-                                                               positive,
-                                                               negative)
-            #batch_loss = args.alpha*mip_loss
-            if epoch<50: batch_loss =  amip_loss + args.alpha*mip_loss
-            else: batch_loss = amip_loss + args.alpha*mip_loss + args.beta*consistency_loss
 
         optimizer.zero_grad()
         batch_loss.backward()
