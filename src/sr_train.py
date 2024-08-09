@@ -131,6 +131,7 @@ for epoch in range(1,args.max_epoch+1):
             batch_loss = basic_loss
         elif args.model == 'bert4rec':
             basic_loss = model.loss(users,sequence,positive,negative)
+            batch_loss = basic_loss
         optimizer.zero_grad()
         batch_loss.backward()
         optimizer.step()#B,L,L
