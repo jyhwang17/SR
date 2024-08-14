@@ -10,6 +10,8 @@ from argparse import Namespace
 from tqdm import tqdm
 from model.sasrec import SASREC
 from model.bert4rec import BERT4REC
+from model.bert4rec2 import BERT4REC2
+
 from model.www_proposal import WWWPROPOSAL
 
 import sys
@@ -39,14 +41,14 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp',
+parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','bert4rec2','fmlp',
                                        'ct4rec','cbit'
                                        ,'tc4rec','tc4rec2','tc4rec3','cl4srec','proposal',
                                        'nip','nmip','pmip','mip','amip','asmip','wwwproposal'],default='bert4rec')
 
 parser.add_argument("--shots",type=int, default=1)
 parser.add_argument("--alpha",type=float,default=1.0, help= " loss weight")
-parser.add_argument("--beta", type=float,default=1.0, help= "loss weight")
+parser.add_argument("--beta", type=float,default=0.0, help= "loss weight")
 parser.add_argument("--gamma",type=float,default=1.0, help= " loss weight")
 parser.add_argument("--dropout",type=float,default=0.3,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
@@ -77,6 +79,8 @@ if args.model == 'sasrec':
     model = SASREC(args).cuda()
 elif args.model == 'bert4rec':
     model = BERT4REC(args).cuda()
+elif args.model == 'bert4rec2':
+    model = BERT4REC2(args).cuda()
 elif args.model == 'wwwproposal':
     model = WWWPROPOSAL(args).cuda()
     if args.augmentation_rule ==1:
@@ -123,13 +127,12 @@ for epoch in range(1,args.max_epoch+1):
         
         if args.model == 'proposal'or args.model == 'wwwproposal':
             amip_loss, aug_amip_loss, mip_loss= model.loss(users,sequence,positive,negative)
-
             batch_loss =  amip_loss + args.alpha*aug_amip_loss + args.beta*mip_loss
             
         elif args.model == 'sasrec' or args.model =='nip':
             basic_loss = model.loss(users,sequence,positive,negative) #B,N
             batch_loss = basic_loss
-        elif args.model == 'bert4rec':
+        elif args.model == 'bert4rec' or args.model == 'bert4rec2':
             basic_loss = model.loss(users,sequence,positive,negative)
             batch_loss = basic_loss
         optimizer.zero_grad()
@@ -224,7 +227,6 @@ if args.mode == 'tune':
         f.write("[MRR    ]@50:: %.4lf\n"%(best["mrr@50"]))
         f.close()
     #print(args)
-    
     '''
     print("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
     print("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
