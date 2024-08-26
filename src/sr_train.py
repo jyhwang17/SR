@@ -11,8 +11,14 @@ from tqdm import tqdm
 from model.sasrec import SASREC
 from model.bert4rec import BERT4REC
 from model.bert4rec2 import BERT4REC2
+from model.mip import MIP
+from model.nip import NIP
+from model.nmip import NMIP
+from model.amip import AMIP
+from model.amip2 import AMIP2
 
 from model.www_proposal import WWWPROPOSAL
+from model.shallow import SHALLOW
 
 import sys
 from utils.loader_utils import SEQDataset
@@ -43,17 +49,19 @@ parser.add_argument("--seed",type=int,default=0,help="seed")
 #Model setup
 parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','bert4rec2','fmlp',
                                        'ct4rec','cbit'
-                                       ,'tc4rec','tc4rec2','tc4rec3','cl4srec','proposal',
-                                       'nip','nmip','pmip','mip','amip','asmip','wwwproposal'],default='bert4rec')
+                                       ,'tc4rec','tc4rec2','tc4rec3','nmip','cl4srec','proposal','umip',
+                                       'nip','nmip','pmip','mip','amip','amip2','asmip','wwwproposal','shallow'],default='bert4rec')
 
 parser.add_argument("--shots",type=int, default=1)
 parser.add_argument("--alpha",type=float,default=1.0, help= " loss weight")
 parser.add_argument("--beta", type=float,default=0.0, help= "loss weight")
 parser.add_argument("--gamma",type=float,default=1.0, help= " loss weight")
+
 parser.add_argument("--dropout",type=float,default=0.3,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
+parser.add_argument("--heads",type=int, default = 2, help ="# of heads")
 parser.add_argument("--encoder_layers", type=int, default = 2, help="# of encoder layers")
-parser.add_argument("--graph_layers", type=int, default=1, help="# of graph layers")
+
 parser.add_argument("--window_length",type=int,default=50,help="window length")
 parser.add_argument("--target_length",type=int,default=1,help="target length")
 parser.add_argument("--mask_prob",type=float,default=0.3,help="masking probability")
@@ -81,8 +89,20 @@ elif args.model == 'bert4rec':
     model = BERT4REC(args).cuda()
 elif args.model == 'bert4rec2':
     model = BERT4REC2(args).cuda()
-elif args.model == 'wwwproposal':
-    model = WWWPROPOSAL(args).cuda()
+elif args.model == 'mip':
+    model = MIP(args).cuda()
+elif args.model == 'nip':
+    model = NIP(args).cuda()
+elif args.model == 'amip':
+    model = AMIP(args).cuda()
+elif args.model == 'amip2':
+    model = AMIP2(args).cuda()
+    
+elif args.model == 'shallow':
+    model = SHALLOW(args).cuda()
+    
+elif args.model == 'nmip':
+    model = NMIP(args).cuda()
     if args.augmentation_rule ==1:
         args.ladj_mat = dataset.ladj_mat1.cuda()
         args.radj_mat = dataset.radj_mat1.cuda()
@@ -97,6 +117,7 @@ elif args.model == 'wwwproposal':
         args.radj_mat = dataset.adj_mat.cuda()
 
     args.adj_mat = dataset.adj_mat.cuda()
+    
     
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
@@ -125,18 +146,22 @@ for epoch in range(1,args.max_epoch+1):
         batch_loss=[]
         consistency = []
         
-        if args.model == 'proposal'or args.model == 'wwwproposal':
-            amip_loss, aug_amip_loss, mip_loss= model.loss(users,sequence,positive,negative)
-            batch_loss =  amip_loss + args.alpha*aug_amip_loss + args.beta*mip_loss
-            
+        if args.model == 'nmip':
+            nip_loss,mip_loss = model.loss(users,sequence, positive, negative)
+            batch_loss =  args.alpha*nip_loss + args.beta*mip_loss
+        elif args.model == 'amip' or args.model == 'amip2':
+            amip_loss1, amip_loss2=  model.loss(users, sequence, positive, negative)
+            batch_loss = args.alpha*amip_loss1 + args.beta*amip_loss2
         elif args.model == 'sasrec' or args.model =='nip':
             basic_loss = model.loss(users,sequence,positive,negative) #B,N
             batch_loss = basic_loss
-        elif args.model == 'bert4rec' or args.model == 'bert4rec2':
+        elif args.model == 'bert4rec' or args.model == 'bert4rec2' or args.model == 'mip' or args.model == 'shallow':
             basic_loss = model.loss(users,sequence,positive,negative)
             batch_loss = basic_loss
+        
         optimizer.zero_grad()
         batch_loss.backward()
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)
         optimizer.step()#B,L,L
     
     model.eval()
@@ -147,7 +172,7 @@ for epoch in range(1,args.max_epoch+1):
         
         result20 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
 
-        if args.mode == 'develop':
+        if args.mode == 'develop' or True:
             print("Validation[%s/%s]"%(epoch,args.max_epoch))
             print("[RECALL ]@20:: %.4lf"%(result20['recall']))
             print("[NDCG   ]@20:: %.4lf"%(result20['ndcg']))
@@ -181,7 +206,7 @@ for epoch in range(1,args.max_epoch+1):
         else:
             stop_cnt= stop_cnt + 1
     
-    if stop_cnt >=40: break
+    if stop_cnt >=50: break
 
         
         
@@ -205,7 +230,7 @@ print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
 print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
 '''    
 if args.mode == 'tune':
-    objs = {"hyperparams": args}
+    objs = {"hyperparams": args, "valid_results": best_valid }
     with open('./knowledge/%s/hyperparams/%s_%s-%s_%.4lf_%.4lf'%(args.dataset,
                                                                  args.model,args.window_length,args.dims,
                                                                  float(best_valid["ndcg"]), float(best["ndcg@20"]))+'.pkl','wb') as f:
