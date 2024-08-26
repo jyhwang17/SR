@@ -36,6 +36,7 @@ class NIP(nn.Module):
         self.criterion = nn.BCELoss(reduction='none')
         self.sigmoid = nn.Sigmoid()
         self.dropout_layer = nn.Dropout(self.args.dropout)
+        self.dropout_layer2 = nn.Dropout(self.args.dropout)
         self.layer_norm = nn.LayerNorm(self.args.dims)
          
         self.apply(self._init_weights)
@@ -84,6 +85,7 @@ class NIP(nn.Module):
             tgt_ebd = tgt_ebd.view(tgt_ebd.size(0)*tgt_ebd.size(1),-1,tgt_ebd.size(3))
             #seq_rep : BL x 1 x dims
             #tgt_ebd : BL x N x dims
+            seq_rep = self.dropout_layer2(seq_rep)
             rel_score = seq_rep.bmm(tgt_ebd.permute([0,2,1])) # BL x 1 x N
             rel_score = rel_score.squeeze(1).view(B,L,-1) # B,L,N
             return rel_score
@@ -118,20 +120,21 @@ class NIP(nn.Module):
         
         pad_filter = (total_sequence.sum(-1)!=0)
         total_sequence = total_sequence[pad_filter]
+        item_seq_indices = item_seq_indices[pad_filter]
         neg_tgt_item_indices = neg_tgt_item_indices[pad_filter]
         
         tgt_item_indices = torch.cat((total_sequence[:,1:].unsqueeze(-1), neg_tgt_item_indices),2)
         
         loss_mask = (total_sequence[:,:-1] != 0)# B L
         score = self.forward(user_indices,
-                                 total_sequence[:,:-1],#[B,L]
-                                 tgt_item_indices,#[B,L,1+N]
-                                 pred_opt='training') #=>[B,L,1+N]
+                             total_sequence[:,:-1],#[B,L]
+                             tgt_item_indices,#[B,L,1+N]
+                             pred_opt='training') #=>[B,L,1+N]
         
         pos_score = score[:,:,[0]]
         neg_score = score[:,:,1:]
-        numerator =  pos_score # (*, 1)
-        denominator = (neg_score.exp().sum(-1,keepdims=True) + pos_score.exp()).log() #[*, 1]
+        numerator =  pos_score[(item_seq_indices !=0)] # (*, 1)
+        denominator = (neg_score.exp().sum(-1,keepdims=True) + pos_score.exp()).log()[(item_seq_indices !=0)] #[*, 1] #size
 
         loss = -((numerator - denominator)) # [*,1]
         return loss.mean()
