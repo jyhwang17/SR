@@ -48,9 +48,22 @@ class BERT4REC(nn.Module):
         self.layer_norm = nn.LayerNorm(self.args.dims)
 
         #etc
-        self.pad_sequence = torch.zeros(self.args.window_length, dtype = int, device = self.device)
         self.all_items = torch.arange(self.args.num_items, device = self.device)
+        self.apply(self._init_weights)
+        self.V.weight.data[0] = 0.
         
+    def _init_weights(self, module):
+        
+        """ Initialize the weights """
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+
+            module.weight.data.normal_(mean=0.0, std=1./self.args.dims )
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+            
     def get_attention_mask(self, item_seq, bidirectional = True):
 
         """Generate left-to-right uni-directional or bidirectional attention mask for multi-head attention."""
@@ -174,7 +187,6 @@ class BERT4REC(nn.Module):
         
         pos_tgt_item_indices = torch.cat((item_seq_indices, pos_item_indices),1).unsqueeze(2)#(B,L+1,1)
         pos_tgt_item_indices = pos_tgt_item_indices[(~input_mask)]  # [*, 1]
-        
 
         #
         neg_item_indices = neg_item_indices.unsqueeze(1)#B,1,N
