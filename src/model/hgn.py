@@ -40,8 +40,7 @@ class HGN(nn.Module):
         f_seq_ebd = seq_ebd * self.sigmoid(self.g1(seq_ebd) + self.g2(usr_ebd))
         seq_rep = f_seq_ebd * self.sigmoid(self.g3(f_seq_ebd) + self.g4(usr_ebd))
 
-
-        rec_heads = usr_ebd + seq_rep.cumsum(1)/( ((item_seq_indices != 0).cumsum(1).unsqueeze(-1)) +1.0) + seq_ebd#.cumsum(1)
+        rec_heads = usr_ebd + seq_rep.cumsum(1)/(((item_seq_indices != 0).cumsum(1).unsqueeze(-1)) +1.0) + seq_ebd.cumsum(1)
         #rec_heads = usr_ebd + seq_ebd.cumsum(1)
         if pred_opt == 'training':
             rec_heads = rec_heads.unsqueeze(2)# B x L x 1 x dims
@@ -101,5 +100,4 @@ class HGN(nn.Module):
                                  pred_opt='training') #=>[B,L,N]
         sigm = nn.Sigmoid()
         loss = -torch.log( sigm(pos_score-neg_score))[loss_mask].flatten()
-
         return loss.mean()

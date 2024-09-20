@@ -150,7 +150,7 @@ def evaluate_asmip_topk(model, seq_list, dataset, scenario = 'valid', pred_opt =
             "hits_list":recall, "hits_pop": hits_pop.mean(), "topk_pop": topk_pop.mean()}
 
 
-def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
+def evaluate_topk(model, seq_list, dataset, scenario = 'valid',topk = 20):
 
     '''
      evaluate topk ranking performance
@@ -204,7 +204,9 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
     hits_pop = torch.cuda.DoubleTensor()
     topk_pop = torch.cuda.DoubleTensor()
     entropy = torch.cuda.DoubleTensor()
+    cross_entropy = torch.cuda.DoubleTensor()
     
+    hits_items = torch.cuda.LongTensor()
     smx = torch.nn.Softmax(dim=1)
     item_pop = torch.cuda.DoubleTensor(dataset.item_pop)
     
@@ -218,14 +220,17 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
                                      pred_opt='eval')
             
            
+            batch_gt_array = torch.index_select(gt_mat, 0, batch_seq_indices).to_dense().long()
             
-            batch_entropy = Categorical(probs = smx(batch_scores[:,1:]) ).entropy()
-
+            #batch_entropy = Categorical(probs = smx(batch_scores[:,1:]) ).entropy()
+            
+            batch_cross_entropy = -(batch_gt_array[:,1:]*smx(batch_scores[:,1:]).log()).sum(-1)
+            
+            #breakpoint()
+            
             batch_seen_array = torch.index_select(seen_mat, 0, batch_seq_indices).to_dense()
             batch_scores.unsqueeze(0)[:, batch_seen_array > 0 ] = -1000.0 # ignore seen items
             batch_topk = torch.topk(batch_scores, k = topk, dim=1, sorted=True).indices
-            
-            batch_gt_array = torch.index_select(gt_mat, 0, batch_seq_indices).to_dense().long()
             
             num_tests = batch_gt_array.sum(1,keepdims=True)
             batch_hits = torch.gather(batch_gt_array, 1, batch_topk)
@@ -243,15 +248,17 @@ def evaluate_topk(model, seq_list, dataset, scenario = 'valid', topk = 20):
             mrr = torch.cat((mrr, batch_mrr.type('torch.DoubleTensor').cuda()), 0)
             
             
-            #for analysis.
+            #For Analysis.
             batch_hits_mask = batch_hits.sum(1).bool()
             batch_gt = gt_analysis[batch_seq_indices]
+            batch_hits_items = batch_gt[batch_hits_mask].flatten()# Check 해보기.
             
-            hits_items = batch_gt[batch_hits_mask].flatten()
-            hits_pop = torch.cat((hits_pop, item_pop[hits_items]),0)
+            hits_pop = torch.cat((hits_pop, item_pop[batch_hits_items]),0)
             topk_pop = torch.cat((topk_pop, item_pop[batch_topk].flatten()),0)
             
-            entropy = torch.cat((entropy, batch_entropy), 0)
+            #entropy = torch.cat((entropy, batch_entropy), 0)
+            cross_entropy = torch.cat((cross_entropy, batch_cross_entropy), 0)
+            hits_items = torch.cat((hits_items, batch_hits_items), 0)
             
-    return {"recall":recall.mean(),"ndcg":ndcg.mean(), "mrr":mrr.mean(), "entropy":entropy.mean(),
-            "hits_list":recall, "hits_pop": hits_pop.mean(), "topk_pop": topk_pop.mean()}
+    return {"recall":recall.mean(),"ndcg":ndcg.mean(), "mrr":mrr.mean(), "cross_entropy":cross_entropy.mean(), "hits_list":recall,
+            "hits_pop": hits_pop.mean(), "topk_pop": topk_pop.mean(), "hits_items":hits_items.cpu()}

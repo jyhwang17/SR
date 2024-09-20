@@ -10,16 +10,13 @@ from argparse import Namespace
 from tqdm import tqdm
 from model.sasrec import SASREC
 from model.bert4rec import BERT4REC
-from model.bert4rec2 import BERT4REC2
+from model.hgn import HGN
+from model.cl4srec import CL4SREC
+
 from model.mip import MIP
 from model.nip import NIP
-from model.nmip import NMIP
-from model.amip import AMIP
-from model.amip2 import AMIP2
 
-from model.www_proposal import WWWPROPOSAL
-from model.shallow import SHALLOW
-
+from model.proposed import PROPOSED
 import sys
 from utils.loader_utils import SEQDataset
 from utils.eval_utils import evaluate_topk
@@ -37,7 +34,7 @@ parser.add_argument("--dataset",type=str,default="CDs",help="dataset")
 parser.add_argument("--save",choices=[True, False],default=True)
 
 #Experiment setup
-parser.add_argument("--max_epoch",type=int,default=200,help="training epoch")
+parser.add_argument("--max_epoch",type=int,default=500,help="training epoch")
 parser.add_argument("--lr",type=float,default=0.0005,help="learning_rate")
 parser.add_argument("--decay",type=float,default=0.0,help="weight decay")
 parser.add_argument("--batch_size",type=int,default=256,help="batch size")
@@ -50,12 +47,15 @@ parser.add_argument("--seed",type=int,default=0,help="seed")
 parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','bert4rec2','fmlp',
                                        'ct4rec','cbit'
                                        ,'tc4rec','tc4rec2','tc4rec3','nmip','cl4srec','proposal','umip',
-                                       'nip','nmip','pmip','mip','amip','amip2','asmip','wwwproposal','shallow'],default='bert4rec')
+                                       'nip','nmip','pmip','mip','amip','amip2','asmip','wwwproposal','shallow', 'proposed',
+                                       'hgn'],default='bert4rec')
 
 parser.add_argument("--shots",type=int, default=1)
-parser.add_argument("--alpha",type=float,default=1.0, help= " loss weight")
-parser.add_argument("--beta", type=float,default=0.0, help= "loss weight")
+parser.add_argument("--alpha",type=float,default=0.2, help= " loss weight")
+parser.add_argument("--beta", type=float,default=0.5, help= "loss weight")
 parser.add_argument("--gamma",type=float,default=1.0, help= " loss weight")
+parser.add_argument("--num_experts",type=int,default=8, help = "num_experts")
+
 
 parser.add_argument("--dropout",type=float,default=0.3,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
@@ -87,41 +87,16 @@ if args.model == 'sasrec':
     model = SASREC(args).cuda()
 elif args.model == 'bert4rec':
     model = BERT4REC(args).cuda()
-elif args.model == 'bert4rec2':
-    model = BERT4REC2(args).cuda()
-elif args.model == 'mip':
-    model = MIP(args).cuda()
-elif args.model == 'nip':
-    model = NIP(args).cuda()
-elif args.model == 'amip':
-    model = AMIP(args).cuda()
-elif args.model == 'amip2':
-    model = AMIP2(args).cuda()
-    
-elif args.model == 'shallow':
-    model = SHALLOW(args).cuda()
-    
-elif args.model == 'nmip':
-    model = NMIP(args).cuda()
-    if args.augmentation_rule ==1:
-        args.ladj_mat = dataset.ladj_mat1.cuda()
-        args.radj_mat = dataset.radj_mat1.cuda()
-    elif args.augmentation_rule ==2:
-        args.ladj_mat = dataset.ladj_mat2.cuda()
-        args.radj_mat = dataset.radj_mat2.cuda()
-    elif args.augmentation_rule ==3:
-        args.ladj_mat = dataset.ladj_mat3.cuda()
-        args.radj_mat = dataset.radj_mat3.cuda()
-    else:
-        args.ladj_mat = dataset.adj_mat.cuda()
-        args.radj_mat = dataset.adj_mat.cuda()
+elif args.model == 'hgn':
+    model = HGN(args).cuda()
+elif args.model == 'cl4srec':
+    model = CL4SREC(args).cuda()
+elif args.model == 'proposed':
+    model = PROPOSED(args).cuda()
 
-    args.adj_mat = dataset.adj_mat.cuda()
-    
-    
+
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
-
 best_valid = {'ndcg':0.0, 'recall':0.0, 'mrr':0.0 }
 best= defaultdict(int)
 
@@ -133,7 +108,6 @@ stop_cnt = 0
 for epoch in range(1,args.max_epoch+1):
 
     model.train()
-
     P = [1,args.window_length+1,args.window_length+2]
     for it, batch_instance in enumerate(tqdm(train_loader, desc="Training", position=0, disable = (args.mode =='tune') )):
         
@@ -146,19 +120,22 @@ for epoch in range(1,args.max_epoch+1):
         batch_loss=[]
         consistency = []
         
-        if args.model == 'nmip':
-            nip_loss,mip_loss = model.loss(users,sequence, positive, negative)
-            batch_loss =  args.alpha*nip_loss + args.beta*mip_loss
-        elif args.model == 'amip' or args.model == 'amip2':
-            amip_loss1, amip_loss2=  model.loss(users, sequence, positive, negative)
-            batch_loss = args.alpha*amip_loss1 + args.beta*amip_loss2
+        if args.model == 'proposed':
+            amip_loss1, amip_loss2, amip_loss3, amip_loss4 , distill_loss =  model.loss(users, sequence, positive, negative)
+            batch_loss = amip_loss1 + args.alpha*amip_loss2 + args.beta*amip_loss3 + args.gamma*amip_loss4
+            
         elif args.model == 'sasrec' or args.model =='nip':
             basic_loss = model.loss(users,sequence,positive,negative) #B,N
             batch_loss = basic_loss
-        elif args.model == 'bert4rec' or args.model == 'bert4rec2' or args.model == 'mip' or args.model == 'shallow':
+        elif args.model == 'bert4rec' or args.model == 'mip':
             basic_loss = model.loss(users,sequence,positive,negative)
             batch_loss = basic_loss
-        
+        elif args.model == 'hgn':
+            batch_loss = model.loss(users, sequence, positive, negative)
+        elif args.model == 'cl4srec':
+            basic_loss, cl_loss = model.loss(users, sequence, positive, negative)
+            batch_loss = basic_loss + args.alpha*cl_loss
+            
         optimizer.zero_grad()
         batch_loss.backward()
         #torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)
@@ -169,10 +146,10 @@ for epoch in range(1,args.max_epoch+1):
     if epoch %2==0:
         validation_mask = (torch.LongTensor(dataset.valid_last_subseqs).sum(1) > 0)
         users = torch.arange(dataset.num_seqs)
-        
         result20 = evaluate_topk(model, users[validation_mask], dataset, 'valid', 20)
-
-        if args.mode == 'develop' or True:
+        
+        if args.mode == 'develop':
+            
             print("Validation[%s/%s]"%(epoch,args.max_epoch))
             print("[RECALL ]@20:: %.4lf"%(result20['recall']))
             print("[NDCG   ]@20:: %.4lf"%(result20['ndcg']))
@@ -182,6 +159,7 @@ for epoch in range(1,args.max_epoch+1):
             best_valid = result20
             model_state = copy.deepcopy(model.state_dict())
             best_epoch = epoch
+            
             #Testing
             test_mask = (torch.LongTensor(dataset.test_last_subseqs).sum(1) > 0)
             users = torch.arange(dataset.num_seqs)
@@ -205,30 +183,29 @@ for epoch in range(1,args.max_epoch+1):
             stop_cnt=0
         else:
             stop_cnt= stop_cnt + 1
-    
+            
     if stop_cnt >=50: break
 
-        
-        
-'''
-print("-------------------------")
-print("[Best VALID EPOACH]:: %s"%(int(best_epoch)))
-print("[RECALL ]@20:: %.4lf"%(float(best_valid["recall"])))
-print("[NDCG   ]@20:: %.4lf"%(float(best_valid["ndcg"])))
-print("[MRR    ]@20:: %.4lf"%(float(best_valid["mrr"])))
-print("-------------------------")
-print("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
-print("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
-print("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
+if args.mode == 'develop':
+    print("-------------------------")
+    print("[Best VALID EPOCH]:: %s"%(int(best_epoch)))
+    print("[RECALL ]@20:: %.4lf"%(float(best_valid["recall"])))
+    print("[NDCG   ]@20:: %.4lf"%(float(best_valid["ndcg"])))
+    print("[MRR    ]@20:: %.4lf"%(float(best_valid["mrr"])))
     
-print("[NDCG   ]@10:: %.4lf"%(best["ndcg@10"]))
-print("[NDCG   ]@20:: %.4lf"%(best["ndcg@20"]))
-print("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
-    
-print("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
-print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
-print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
-'''    
+    print("-------------------------")
+    print("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
+    print("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
+    print("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
+        
+    print("[NDCG   ]@10:: %.4lf"%(best["ndcg@10"]))
+    print("[NDCG   ]@20:: %.4lf"%(best["ndcg@20"]))
+    print("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
+        
+    print("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
+    print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
+    print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
+
 if args.mode == 'tune':
     objs = {"hyperparams": args, "valid_results": best_valid }
     with open('./knowledge/%s/hyperparams/%s_%s-%s_%.4lf_%.4lf'%(args.dataset,
@@ -236,35 +213,22 @@ if args.mode == 'tune':
                                                                  float(best_valid["ndcg"]), float(best["ndcg@20"]))+'.pkl','wb') as f:
         pickle.dump(objs, f)
     
-    with open('./log/%s/%s_%s_%s.txt'%(args.dataset,args.model,args.window_length,args.dims) ,'a') as f:
-        f.write(str(args))
-        f.write("\n")
-        f.write("[RECALL ]@10:: %.4lf\n"%(best["recall@10"]))
-        f.write("[RECALL ]@20:: %.4lf\n"%(best["recall@20"]))
-        f.write("[RECALL ]@50:: %.4lf\n"%(best["recall@50"]))
+        with open('./log/%s/%s_%s_%s.txt'%(args.dataset,args.model,args.window_length,args.dims) ,'a') as f:
+            f.write(str(args))
+            f.write("\n")
+            f.write("[RECALL ]@10:: %.4lf\n"%(best["recall@10"]))
+            f.write("[RECALL ]@20:: %.4lf\n"%(best["recall@20"]))
+            f.write("[RECALL ]@50:: %.4lf\n"%(best["recall@50"]))
+
+            f.write("[NDCG   ]@10:: %.4lf\n"%(best["ndcg@10"]))
+            f.write("[NDCG   ]@20:: %.4lf\n"%(best["ndcg@20"]))
+            f.write("[NDCG   ]@50:: %.4lf\n"%(best["ndcg@50"]))
+
+            f.write("[MRR    ]@10:: %.4lf\n"%(best["mrr@10"]))
+            f.write("[MRR    ]@20:: %.4lf\n"%(best["mrr@20"]))
+            f.write("[MRR    ]@50:: %.4lf\n"%(best["mrr@50"]))
+            f.close()
     
-        f.write("[NDCG   ]@10:: %.4lf\n"%(best["ndcg@10"]))
-        f.write("[NDCG   ]@20:: %.4lf\n"%(best["ndcg@20"]))
-        f.write("[NDCG   ]@50:: %.4lf\n"%(best["ndcg@50"]))
-    
-        f.write("[MRR    ]@10:: %.4lf\n"%(best["mrr@10"]))
-        f.write("[MRR    ]@20:: %.4lf\n"%(best["mrr@20"]))
-        f.write("[MRR    ]@50:: %.4lf\n"%(best["mrr@50"]))
-        f.close()
-    #print(args)
-    '''
-    print("[RECALL ]@10:: %.4lf"%(best["recall@10"]))
-    print("[RECALL ]@20:: %.4lf"%(best["recall@20"]))
-    print("[RECALL ]@50:: %.4lf"%(best["recall@50"]))
-    
-    print("[NDCG   ]@10:: %.4lf"%(best["ndcg@10"]))
-    print("[NDCG   ]@20:: %.4lf"%(best["ndcg@20"]))
-    print("[NDCG   ]@50:: %.4lf"%(best["ndcg@50"]))
-    
-    print("[MRR    ]@10:: %.4lf"%(best["mrr@10"]))
-    print("[MRR    ]@20:: %.4lf"%(best["mrr@20"]))
-    print("[MRR    ]@50:: %.4lf"%(best["mrr@50"]))
-    '''
     torch.save(model_state, './knowledge/%s/%s_%s-%s_%.4lf_%.4lf'%(args.dataset,
                                                                    args.model, args.window_length, args.dims,
                                                                    float(best_valid["ndcg"]), float(best["ndcg@20"])))

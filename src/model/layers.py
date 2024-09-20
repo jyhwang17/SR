@@ -1,6 +1,6 @@
 import copy
 from typing import Optional, Any, Union, Callable
-
+from torch.distributions import Categorical
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -140,17 +140,18 @@ class MultiHeadAttention(nn.Module):
         self.LayerNorm = nn.LayerNorm(hidden_size, eps=layer_norm_eps)
         self.out_dropout = nn.Dropout(hidden_dropout_prob)
         self.cnt = 0
-        
+
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
         return x
 
     def forward(self, input_tensor, attention_mask):
-        #mixed_query_layer = self.query(input_tensor)
+        
+        #mixed_query_layer = (input_tensor)
         #mixed_key_layer = self.key(input_tensor)
         #mixed_value_layer = self.value(input_tensor)
-
+        
         mixed_query_layer = self.query((input_tensor))
         mixed_key_layer = self.key((input_tensor))
         mixed_value_layer = self.value((input_tensor))
@@ -170,12 +171,23 @@ class MultiHeadAttention(nn.Module):
         #position_bias = self.relative_encoder(attention_scores.size(2),attention_scores.size(3))
         attention_scores = attention_scores + attention_mask # + position_bias
         # Normalize the attention scores to probabilities.
+        
         attention_probs = self.softmax(attention_scores)
-
+        '''
+        attention_temp_mask = attention_mask.clone()
+        attention_temp_mask[:,:,:,-1] = -10000.0
+        selection_mask = attention_temp_mask.permute(0,1,3,2).repeat(1, self.num_attention_heads,1,1)
+        selection_mask = (selection_mask >=0.0).squeeze(-1)
+        '''
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
+        
+        #i_entropy = Categorical(probs = attention_probs[selection_mask]).entropy()# B,H,L, attention_N
+        '''
+        i_entropy = Categorical(probs = attention_probs[:,:,-2,:].view(-1,attention_probs.size(-1)) ).entropy()# B,H,L, attention_N
+        m_entropy = Categorical(probs = attention_probs[:,:,-1,:].view(-1,attention_probs.size(-1)) ).entropy()# B,H,L, attention_N
+        '''
         attention_probs = self.attn_dropout(attention_probs)
-
         context_layer = torch.matmul(attention_probs, value_layer)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
@@ -184,7 +196,7 @@ class MultiHeadAttention(nn.Module):
         hidden_states = self.out_dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
 
-        return hidden_states
+        return hidden_states#,i_entropy,m_entropy
 
 class FeedForward(nn.Module):
     """
@@ -258,9 +270,10 @@ class TransformerLayer(nn.Module):
         self.feed_forward = FeedForward(hidden_size, intermediate_size, hidden_dropout_prob, hidden_act, layer_norm_eps)
 
     def forward(self, hidden_states, attention_mask):
+        #attention_output,i_entropy,m_entropy = self.multi_head_attention(hidden_states, attention_mask)
         attention_output = self.multi_head_attention(hidden_states, attention_mask)
         feedforward_output = self.feed_forward(attention_output)
-        return feedforward_output
+        return feedforward_output#,i_entropy,m_entropy
 
 
 class TransformerEncoder(nn.Module):
@@ -297,6 +310,7 @@ class TransformerEncoder(nn.Module):
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(n_layers)])
 
     def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True):
+        
         """
         Args:
             hidden_states (torch.Tensor): the input of the TransformerEncoder
@@ -306,11 +320,21 @@ class TransformerEncoder(nn.Module):
             all_encoder_layers (list): if output_all_encoded_layers is True, return a list consists of all transformer
             layers' output, otherwise return a list only consists of the output of last transformer layer.
         """
+        
         all_encoder_layers = []
+        #all_i_entropy = []
+        #all_m_entropy = []
         for layer_module in self.layer:
+            #hidden_states, i_entropy, m_entropy = layer_module(hidden_states, attention_mask)
             hidden_states = layer_module(hidden_states, attention_mask)
+            
+            #hidden_states = layer_module(hidden_states, attention_mask)
             if output_all_encoded_layers:
                 all_encoder_layers.append(hidden_states)
+                #all_i_entropy.append(i_entropy)
+                #all_m_entropy.append(m_entropy)
+        
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
-        return all_encoder_layers
+        
+        return all_encoder_layers#, all_i_entropy, all_m_entropy
