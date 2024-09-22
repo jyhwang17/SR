@@ -12,6 +12,7 @@ from model.sasrec import SASREC
 from model.bert4rec import BERT4REC
 from model.hgn import HGN
 from model.cl4srec import CL4SREC
+from model.fmlp import FMLP
 
 from model.mip import MIP
 from model.nip import NIP
@@ -44,11 +45,10 @@ parser.add_argument("--mode",choices=['develop','tune'],default='develop')
 parser.add_argument("--seed",type=int,default=0,help="seed")
 
 #Model setup
-parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','bert4rec2','fmlp',
-                                       'ct4rec','cbit'
-                                       ,'tc4rec','tc4rec2','tc4rec3','nmip','cl4srec','proposal','umip',
-                                       'nip','nmip','pmip','mip','amip','amip2','asmip','wwwproposal','shallow', 'proposed',
-                                       'hgn'],default='bert4rec')
+parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp',
+                                       'ct4rec','cbit','ct4rec',
+                                       'cl4srec','proposed',
+                                       ],default='bert4rec')
 
 parser.add_argument("--shots",type=int, default=1)
 parser.add_argument("--alpha",type=float,default=0.2, help= " loss weight")
@@ -91,6 +91,8 @@ elif args.model == 'hgn':
     model = HGN(args).cuda()
 elif args.model == 'cl4srec':
     model = CL4SREC(args).cuda()
+elif args.model == 'fmlp':
+    model = FMLP(args).cuda()
 elif args.model == 'proposed':
     model = PROPOSED(args).cuda()
 
@@ -127,15 +129,20 @@ for epoch in range(1,args.max_epoch+1):
         elif args.model == 'sasrec' or args.model =='nip':
             basic_loss = model.loss(users,sequence,positive,negative) #B,N
             batch_loss = basic_loss
+            
         elif args.model == 'bert4rec' or args.model == 'mip':
             basic_loss = model.loss(users,sequence,positive,negative)
             batch_loss = basic_loss
+            
         elif args.model == 'hgn':
             batch_loss = model.loss(users, sequence, positive, negative)
         elif args.model == 'cl4srec':
             basic_loss, cl_loss = model.loss(users, sequence, positive, negative)
             batch_loss = basic_loss + args.alpha*cl_loss
             
+        elif args.model == 'fmlp':
+            basic_loss = model.loss(users, sequence, positive, negative)
+            batch_loss = basic_loss
         optimizer.zero_grad()
         batch_loss.backward()
         #torch.nn.utils.clip_grad_norm_(model.parameters(), 3.0)

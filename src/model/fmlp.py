@@ -6,7 +6,6 @@ import numpy as np
 import torch.nn.functional as F
 from .filter_layers import FFTEncoder as FTE
 
-
 def _generate_square_subsequent_mask(sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
@@ -40,7 +39,21 @@ class FMLP(nn.Module):
         self.mask = _generate_square_subsequent_mask(self.args.window_length)
         self.dropout_layer = nn.Dropout(self.args.dropout)
         self.layer_norm = nn.LayerNorm(self.args.dims)
+        self.apply(self._init_weights)
+        self.V.weight.data[0] = 0.
         
+    def _init_weights(self, module):
+        
+        """ Initialize the weights """
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+
+            module.weight.data.normal_(mean=0.0, std=1./self.args.dims )
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+            
     def get_position(self, seq):
         lens = (seq!=0).sum(1).cpu().numpy()        
         positions = [[0] * (self.args.window_length-l) + [i+1 for i in range(l)] for l in lens]            
@@ -58,13 +71,16 @@ class FMLP(nn.Module):
         rec_heads = seq_rep[:,-1,:] # B x dims
         
         if pred_opt == 'training':
+            
             seq_rep = seq_rep.unsqueeze(2)# B x L x 1 x dims
             seq_rep = seq_rep.view(seq_rep.size(0)*seq_rep.size(1),seq_rep.size(2),seq_rep.size(3))
             tgt_ebd = tgt_ebd.view(tgt_ebd.size(0)*tgt_ebd.size(1),-1,tgt_ebd.size(3))
             #seq_rep : BL x 1 x dims
             #tgt_ebd : BL x N x dims
+            
             rel_score = seq_rep.bmm(tgt_ebd.permute([0,2,1])) # BL x 1 x N
             rel_score = rel_score.squeeze(1).view(B,L,-1) # B,L,N
+
             return rel_score
         else:
             # rec_heads: batch x dims (e.g., 500, 64)
@@ -74,7 +90,6 @@ class FMLP(nn.Module):
 
     def loss(self,
              user_indices,
-             sorted_item_seq_indices,
              item_seq_indices,
              pos_item_indices,
              neg_item_indices
@@ -90,30 +105,29 @@ class FMLP(nn.Module):
         
         :return: loss
         '''
-        
+
         B,L = item_seq_indices.size() 
         total_sequence = torch.cat((item_seq_indices, pos_item_indices),1) #[B,L+1]
         neg_tgt_item_indices = neg_item_indices.unsqueeze(1).expand(-1,item_seq_indices.size(1),-1) #[B,L,L]
         neg_tgt_item_indices = torch.diagonal(neg_tgt_item_indices, offset = 0, dim1=1, dim2=2).unsqueeze(-1)
 
         pad_filter = (total_sequence.sum(-1)!=0)
-
         user_indices = user_indices[pad_filter]
         total_sequence = total_sequence[pad_filter]
         neg_tgt_item_indices = neg_tgt_item_indices[pad_filter]
         
         loss_mask = (total_sequence[:,:-1] != 0)# B L
+
         pos_score = self.forward(user_indices,
                                  total_sequence[:,:-1],#[B,L]
                                  total_sequence[:,1:].unsqueeze(-1),#[B,L,1]
                                  pred_opt='training') #=>[B,L,1]
-        
+
         neg_score = self.forward(user_indices,
                                  total_sequence[:,:-1],#[B,L]
                                  neg_tgt_item_indices,#[B,L,N]
                                  pred_opt='training') #=>[B,L,N]
         sigm = nn.Sigmoid()
-        loss = -torch.log( sigm(pos_score-neg_score))[loss_mask].flatten()
+        loss = -torch.log(sigm(pos_score-neg_score))[loss_mask].flatten()
         
         return loss.mean()
-        
