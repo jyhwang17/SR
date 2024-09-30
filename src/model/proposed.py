@@ -44,7 +44,7 @@ class GatingNetwork(nn.Module):
     def __init__(self, input_dim, num_experts):
         
         super(GatingNetwork, self).__init__()
-        self.gate = nn.Linear(input_dim, num_experts)
+        self.gate = nn.Linear(input_dim, num_experts, bias=False)
 
     def forward(self, x):
         return F.softmax(self.gate(x), dim=-1)
@@ -417,20 +417,5 @@ class PROPOSED(nn.Module):
         amip_r2_loss = torch.cat((amip_r2_loss, self.sampled_ce_loss(score_prev)),0)
         
         
-        #Distillation
-        '''
-        rep4tgt_s = transformer_rep[(masked_item_seq_indices == self.mask_index)].unsqueeze(1) #Dropout
-        alignments_s = self.gate(rep4self).squeeze(1)
         
-        self.eval()
-        transformer_rep = self.get_contextualized_rep(user_indices, masked_item_seq_indices2)
-        rep4tgt_t = transformer_rep[(masked_item_seq_indices2 == self.mask_index)].unsqueeze(1) #No Dropout
-        alignments2 = self.gate(rep4self2).squeeze(1)
-        self.train()
-        
-        alignments = self.gate(transformer_rep[loss_mask_self])
-        distill_loss = -(alignments.mean(0).log()* torch.ones((self.num_experts)).cuda()*(1/self.num_experts)).sum() - (alignments1.log()*alignments2.detach().clone()).sum(-1).mean()
-        
-        #print(alignments, torch.argmax(alignments,dim=-1))
-        '''
-        return amip_l1_loss.mean(), amip_l2_loss.mean(), amip_r1_loss.mean(), amip_r2_loss.mean(), distill_loss.mean()
+        return amip_l1_loss.mean(), amip_l2_loss.mean(), amip_r1_loss.mean(), amip_r2_loss.mean()
