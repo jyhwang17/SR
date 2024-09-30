@@ -123,7 +123,7 @@ for epoch in range(1,args.max_epoch+1):
         consistency = []
         
         if args.model == 'proposed':
-            amip_loss1, amip_loss2, amip_loss3, amip_loss4 , distill_loss =  model.loss(users, sequence, positive, negative)
+            amip_loss1, amip_loss2, amip_loss3, amip_loss4 =  model.loss(users, sequence, positive, negative)
             batch_loss = amip_loss1 + args.alpha*amip_loss2 + args.beta*amip_loss3 + args.gamma*amip_loss4
             
         elif args.model == 'sasrec' or args.model =='nip':
