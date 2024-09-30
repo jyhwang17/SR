@@ -340,7 +340,7 @@ class PROPOSED(nn.Module):
         
         masked_item_seq_indices, input_mask = self.mask_sequence(S_u, mask_prob) #중요: Masking Rule에 민감. Dropout에 민감.
         
-        masked_item_seq_indices2, _ = self.mask_sequence(S_u, mask_prob)
+        #masked_item_seq_indices2, _ = self.mask_sequence(S_u, mask_prob)
         
         #masked_item_seq_indices2, input_mask2 = self.mask_sequence(S_u, mask_prob)
         #masked_item_seq_indices, input_mask = self.mask_sequence(item_seq_indices, mask_prob)
@@ -415,7 +415,5 @@ class PROPOSED(nn.Module):
         tgt_prev = self.V(prev_tgt_item_indices2)[loss_mask_prev2]
         score_prev = rep4prev_f.bmm(tgt_prev.permute([0,2,1])).squeeze(1)
         amip_r2_loss = torch.cat((amip_r2_loss, self.sampled_ce_loss(score_prev)),0)
-        
-        
         
         return amip_l1_loss.mean(), amip_l2_loss.mean(), amip_r1_loss.mean(), amip_r2_loss.mean()
