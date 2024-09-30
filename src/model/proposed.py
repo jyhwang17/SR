@@ -62,7 +62,7 @@ class PROPOSED(nn.Module):
         
         torch.cuda.set_device(self.device)
         
-        self.num_experts = 4
+        self.num_experts = args.num_experts
         
         self.experts = nn.ModuleList([Expert(self.args.dims, self.args.dims*4, self.args.dims ) for _ in range(self.num_experts)])
         self.gate = GatingNetwork(self.args.dims, self.num_experts)
