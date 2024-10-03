@@ -18,6 +18,9 @@ from model.mip import MIP
 from model.nip import NIP
 
 from model.proposed import PROPOSED
+from model.proposed2 import PROPOSED2
+from model.proposed3 import PROPOSED3
+
 import sys
 from utils.loader_utils import SEQDataset
 from utils.eval_utils import evaluate_topk
@@ -48,12 +51,14 @@ parser.add_argument("--seed",type=int,default=0,help="seed")
 parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp',
                                        'ct4rec','cbit','ct4rec',
                                        'cl4srec','proposed',
+                                       'proposed2','proposed3',
                                        ],default='bert4rec')
 
 parser.add_argument("--shots",type=int, default=1)
 parser.add_argument("--alpha",type=float,default=0.2, help= " loss weight")
 parser.add_argument("--beta", type=float,default=0.5, help= "loss weight")
 parser.add_argument("--gamma",type=float,default=1.0, help= " loss weight")
+parser.add_argument("--lambda",type=float,default=1.0, help= " loss weight")
 parser.add_argument("--num_experts",type=int,default=8, help = "num_experts")
 
 
@@ -95,8 +100,11 @@ elif args.model == 'fmlp':
     model = FMLP(args).cuda()
 elif args.model == 'proposed':
     model = PROPOSED(args).cuda()
-
-
+elif args.model == 'proposed2':
+    model = PROPOSED2(args).cuda()
+elif args.model == 'proposed3':
+    model = PROPOSED3(args).cuda()
+    
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
 best_valid = {'ndcg':0.0, 'recall':0.0, 'mrr':0.0 }
@@ -125,6 +133,9 @@ for epoch in range(1,args.max_epoch+1):
         if args.model == 'proposed':
             amip_loss1, amip_loss2, amip_loss3, amip_loss4 =  model.loss(users, sequence, positive, negative)
             batch_loss = amip_loss1 + args.alpha*amip_loss2 + args.beta*amip_loss3 + args.gamma*amip_loss4
+        elif args.model == 'proposed2' or args.model == 'proposed3':
+            amip_loss1, amip_loss2, amip_loss3, amip_loss4, reg = model.loss(users, sequence, positive, negative)
+            batch_loss = amip_loss1 + args.alpha*amip_loss3 + args.beta*reg
             
         elif args.model == 'sasrec' or args.model =='nip':
             basic_loss = model.loss(users,sequence,positive,negative) #B,N
@@ -136,6 +147,7 @@ for epoch in range(1,args.max_epoch+1):
             
         elif args.model == 'hgn':
             batch_loss = model.loss(users, sequence, positive, negative)
+            
         elif args.model == 'cl4srec':
             basic_loss, cl_loss = model.loss(users, sequence, positive, negative)
             batch_loss = basic_loss + args.alpha*cl_loss
