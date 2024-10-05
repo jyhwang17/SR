@@ -49,11 +49,11 @@ class GatingNetwork(nn.Module):
     def forward(self, x):
         return F.softmax(self.gate(x), dim=-1)
     
-class PROPOSED3(nn.Module):
+class PROPOSED2(nn.Module):
     
     def __init__(self, args):
         
-        super(PROPOSED3, self).__init__()
+        super(PROPOSED2, self).__init__()
         self.args = args
         self.mask_prob = self.args.mask_prob
         self.mtype = 'JOIN'

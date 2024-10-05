@@ -17,9 +17,10 @@ from model.fmlp import FMLP
 from model.mip import MIP
 from model.nip import NIP
 
-from model.proposed import PROPOSED
-from model.proposed2 import PROPOSED2
-from model.proposed3 import PROPOSED3
+
+from model.catproposed import CATPROPOSED
+from model.mulproposed import MULPROPOSED
+from model.addproposed import ADDPROPOSED
 
 import sys
 from utils.loader_utils import SEQDataset
@@ -51,7 +52,7 @@ parser.add_argument("--seed",type=int,default=0,help="seed")
 parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp',
                                        'ct4rec','cbit','ct4rec',
                                        'cl4srec','proposed',
-                                       'proposed2','proposed3',
+                                       'catproposed','mulproposed','addproposed',
                                        ],default='bert4rec')
 
 parser.add_argument("--shots",type=int, default=1)
@@ -100,10 +101,12 @@ elif args.model == 'fmlp':
     model = FMLP(args).cuda()
 elif args.model == 'proposed':
     model = PROPOSED(args).cuda()
-elif args.model == 'proposed2':
-    model = PROPOSED2(args).cuda()
-elif args.model == 'proposed3':
-    model = PROPOSED3(args).cuda()
+elif args.model == 'catproposed':
+    model = CATPROPOSED(args).cuda()
+elif args.model == 'mulproposed':
+    model = MULPROPOSED(args).cuda()
+elif args.model == 'addproposed':
+    model = ADDPROPOSED(args).cuda()
     
 train_loader = data.DataLoader(dataset, batch_size = args.batch_size, shuffle=True)
 optimizer= torch.optim.Adam([v for v in model.parameters()], lr=args.lr, weight_decay = args.decay)
@@ -133,9 +136,13 @@ for epoch in range(1,args.max_epoch+1):
         if args.model == 'proposed':
             amip_loss1, amip_loss2, amip_loss3, amip_loss4 =  model.loss(users, sequence, positive, negative)
             batch_loss = amip_loss1 + args.alpha*amip_loss2 + args.beta*amip_loss3 + args.gamma*amip_loss4
-        elif args.model == 'proposed2' or args.model == 'proposed3':
-            amip_loss1, amip_loss2, amip_loss3, amip_loss4, reg = model.loss(users, sequence, positive, negative)
-            batch_loss = amip_loss1 + args.alpha*amip_loss3 + args.beta*reg
+        
+        elif args.model == 'catproposed' or args.model == 'mulproposed' or args.model == 'addproposed':
+            
+            #model.gate.update_T( max(0.2, 3.0*(0.9**(epoch)) ) )
+            amip_loss1, amip_loss2, amip_loss3, amip_loss4 = model.loss(users, sequence, positive, negative)
+            
+            batch_loss = amip_loss1 + args.alpha*amip_loss3 + args.beta*amip_loss2
             
         elif args.model == 'sasrec' or args.model =='nip':
             basic_loss = model.loss(users,sequence,positive,negative) #B,N
