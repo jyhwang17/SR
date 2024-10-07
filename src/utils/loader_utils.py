@@ -110,15 +110,15 @@ class SEQDataset(Dataset):
             
             #self.ladj_mat = data_dict["ladj_mat"]
             #self.radj_mat = data_dict["radj_mat"]
-            self.adj_mat = data_dict["adj_mat"]
+            #self.adj_mat = data_dict["adj_mat"]
             
-            self.ladj_mat1 = data_dict["ladj_mat1"]
-            self.ladj_mat2 = data_dict["ladj_mat2"]
-            self.ladj_mat3 = data_dict["ladj_mat3"]
+            #self.ladj_mat1 = data_dict["ladj_mat1"]
+            #self.ladj_mat2 = data_dict["ladj_mat2"]
+            #self.ladj_mat3 = data_dict["ladj_mat3"]
             
-            self.radj_mat1 = data_dict["radj_mat1"]
-            self.radj_mat2 = data_dict["radj_mat2"]
-            self.radj_mat3 = data_dict["radj_mat3"]
+            #self.radj_mat1 = data_dict["radj_mat1"]
+            #self.radj_mat2 = data_dict["radj_mat2"]
+            #self.radj_mat3 = data_dict["radj_mat3"]
             
         except Exception as e:
             print('load error', e)
