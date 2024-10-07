@@ -17,7 +17,8 @@ from model.fmlp import FMLP
 from model.mip import MIP
 from model.nip import NIP
 
-
+from model.proposed import PROPOSED
+from model.proposed2 import PROPOSED2
 from model.catproposed import CATPROPOSED
 from model.mulproposed import MULPROPOSED
 from model.addproposed import ADDPROPOSED
@@ -51,7 +52,7 @@ parser.add_argument("--seed",type=int,default=0,help="seed")
 #Model setup
 parser.add_argument("--model",choices=['sasrec','hgn','bert4rec','fmlp',
                                        'ct4rec','cbit','ct4rec',
-                                       'cl4srec','proposed',
+                                       'cl4srec','proposed','proposed2',
                                        'catproposed','mulproposed','addproposed',
                                        ],default='bert4rec')
 
@@ -61,7 +62,6 @@ parser.add_argument("--beta", type=float,default=0.5, help= "loss weight")
 parser.add_argument("--gamma",type=float,default=1.0, help= " loss weight")
 parser.add_argument("--lambda",type=float,default=1.0, help= " loss weight")
 parser.add_argument("--num_experts",type=int,default=8, help = "num_experts")
-
 
 parser.add_argument("--dropout",type=float,default=0.3,help="dropout")
 parser.add_argument("--dims",type=int,default=128,help="embedding size")
@@ -101,6 +101,8 @@ elif args.model == 'fmlp':
     model = FMLP(args).cuda()
 elif args.model == 'proposed':
     model = PROPOSED(args).cuda()
+elif args.model == 'proposed2':
+    model = PROPOSED2(args).cuda()
 elif args.model == 'catproposed':
     model = CATPROPOSED(args).cuda()
 elif args.model == 'mulproposed':
@@ -136,7 +138,11 @@ for epoch in range(1,args.max_epoch+1):
         if args.model == 'proposed':
             amip_loss1, amip_loss2, amip_loss3, amip_loss4 =  model.loss(users, sequence, positive, negative)
             batch_loss = amip_loss1 + args.alpha*amip_loss2 + args.beta*amip_loss3 + args.gamma*amip_loss4
-        
+        elif args.model == 'proposed2':
+            
+            amip_loss1, amip_loss2, amip_loss3, amip_loss4, mip_loss =  model.loss(users, sequence, positive, negative)
+            batch_loss = amip_loss1 + args.alpha*amip_loss3 + args.beta*amip_loss2 + args.gamma*mip_loss
+            
         elif args.model == 'catproposed' or args.model == 'mulproposed' or args.model == 'addproposed':
             
             #model.gate.update_T( max(0.2, 3.0*(0.9**(epoch)) ) )

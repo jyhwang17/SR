@@ -37,17 +37,18 @@ class Expert(nn.Module):
     def forward(self, x):
         #x = self.LayerNorm(x)
         x2 = self.gelu(self.fc1(x))
-        return self.LayerNorm2(self.dropout(self.fc2(x2)) + x)
+        return self.dropout2(self.LayerNorm(self.fc2(x2)))
 
 # Define the Gating Network class
 class GatingNetwork(nn.Module):
     def __init__(self, input_dim, num_experts):
         
         super(GatingNetwork, self).__init__()
-        self.gate = nn.Linear(input_dim, num_experts, bias=False)
+        self.gate = nn.Linear(input_dim, num_experts)
 
     def forward(self, x):
-        return F.softmax(self.gate(x), dim=-1)
+        
+        return F.softmax(self.gate(x),dim=-1)
     
 class PROPOSED2(nn.Module):
     
@@ -63,7 +64,7 @@ class PROPOSED2(nn.Module):
         
         self.num_experts = args.num_experts
         
-        self.experts = nn.ModuleList([Expert(self.args.dims, self.args.dims*4, self.args.dims ) for _ in range(self.num_experts)])
+        self.experts = nn.ModuleList([Expert(self.args.dims, (_+1)*(self.args.dims//4), self.args.dims ) for _ in range(self.num_experts)])
         self.gate = GatingNetwork(self.args.dims, self.num_experts)
         
         #model parameters
@@ -200,8 +201,10 @@ class PROPOSED2(nn.Module):
         gating_scores = self.gate(m_rep) # B,1,E
         #B,D
         expert_outputs = torch.stack([expert(e_rep) for expert in self.experts], dim = 1).squeeze(2)# B,E,D
-        ret = gating_scores.bmm(expert_outputs) # B,1,D
-        ret = self.task_dropout[0](self.task_norm[0](ret))
+        
+        ret = gating_scores.bmm(expert_outputs)
+        ret = self.task_dropout[0](self.task_norm[0](ret + e_rep))
+        
         return ret
     
     def divergence(self, item_seq_indices1, item_seq_indices2):
