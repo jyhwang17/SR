@@ -8,13 +8,10 @@ import pickle
 import math
 from .layers import TransformerEncoder as TE
 from .layers import FeedForward as FF
-
 from utils.inference_utils import map_index
 from utils.inference_utils import filter_sequence
 from utils.loader_utils import load_mapping_info
 from collections import namedtuple
-
-
 class Expert(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(Expert, self).__init__()
@@ -37,18 +34,17 @@ class Expert(nn.Module):
     def forward(self, x):
         #x = self.LayerNorm(x)
         x2 = self.gelu(self.fc1(x))
-        return self.dropout2(self.LayerNorm(self.fc2(x2)))
+        return self.LayerNorm2(self.dropout(self.fc2(x2)) + x)
 
 # Define the Gating Network class
 class GatingNetwork(nn.Module):
     def __init__(self, input_dim, num_experts):
         
         super(GatingNetwork, self).__init__()
-        self.gate = nn.Linear(input_dim, num_experts)
-
-    def forward(self, x):
+        self.gate = nn.Linear(input_dim, num_experts, bias=False)
         
-        return F.softmax(self.gate(x),dim=-1)
+    def forward(self, x):
+        return F.softmax(self.gate(x), dim=-1)
     
 class PROPOSED2(nn.Module):
     
@@ -64,7 +60,7 @@ class PROPOSED2(nn.Module):
         
         self.num_experts = args.num_experts
         
-        self.experts = nn.ModuleList([Expert(self.args.dims, (_+1)*(self.args.dims//4), self.args.dims ) for _ in range(self.num_experts)])
+        self.experts = nn.ModuleList([Expert(self.args.dims, (_+1)*(self.args.dims//8), self.args.dims ) for _ in range(self.num_experts)])
         self.gate = GatingNetwork(self.args.dims, self.num_experts)
         
         #model parameters
@@ -144,9 +140,7 @@ class PROPOSED2(nn.Module):
             module.weight.data.fill_(1.0)
         if isinstance(module, nn.Linear) and module.bias is not None:
             module.bias.data.zero_()
-
     def get_attention_mask(self, item_seq, bidirectional = True):
-
         """Generate left-to-right uni-directional or bidirectional attention mask for multi-head attention."""
         attention_mask = (item_seq != 0)
         extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)  # torch.bool
@@ -201,10 +195,8 @@ class PROPOSED2(nn.Module):
         gating_scores = self.gate(m_rep) # B,1,E
         #B,D
         expert_outputs = torch.stack([expert(e_rep) for expert in self.experts], dim = 1).squeeze(2)# B,E,D
-        
-        ret = gating_scores.bmm(expert_outputs)
-        ret = self.task_dropout[0](self.task_norm[0](ret + e_rep))
-        
+        ret = gating_scores.bmm(expert_outputs) # B,1,D
+        ret = self.task_dropout[0](self.task_norm[0](ret))
         return ret
     
     def divergence(self, item_seq_indices1, item_seq_indices2):
@@ -225,13 +217,11 @@ class PROPOSED2(nn.Module):
         seq_rep1_src = seq_reps1[:,[-2],:]
         
         seq_rep1 = self.get_task_contextualized_rep(seq_rep1_tgt, seq_rep1_src).squeeze(1)
-
         seq_reps2 = self.get_contextualized_rep(None, masked_item_seq_indices2)
         seq_rep2_tgt = seq_reps2[:,[-1],:]
         seq_rep2_src = seq_reps2[:,[-2],:]
         
         seq_rep2 = self.get_task_contextualized_rep(seq_rep2_tgt, seq_rep2_src).squeeze(1)
-
         p = F.softmax( torch.mm(seq_rep1, self.V.weight.t() ), dim=-1)
         q = F.softmax( torch.mm(seq_rep2, self.V.weight.t() ), dim=-1)
         
@@ -282,7 +272,7 @@ class PROPOSED2(nn.Module):
         rep4next = seq_rep[:,-2,:].unsqueeze(1)
         rep4tgt = seq_rep[:,-1,:].unsqueeze(1)
         rec_heads = self.get_task_contextualized_rep(rep4tgt,rep4next).squeeze(1)
-        rec_heads2= self.layer_norm2(self.lin(self.gate(rep4tgt))).squeeze(1)
+        rec_heads2= self.layer_norm2(self.lin(self.gate(rep4tgt))+rep4tgt).squeeze(1)
         
         rel_score = rec_heads.mm(tgt_ebd.squeeze(1).t()) # batch x all_Items
         rel_score2 = rec_heads2.mm(tgt_ebd.squeeze(1).t())
@@ -290,7 +280,6 @@ class PROPOSED2(nn.Module):
         return rel_score + rel_score2
         
     def forward(self, user_indices, item_seq_indices, target_item_indices, pred_opt = 'eval'):
-
         '''
         compute model outputs
         :param torch.LongTensor (B) user_indices:
@@ -304,7 +293,6 @@ class PROPOSED2(nn.Module):
             #return self.masked_prediction(user_indices, item_seq_indices, target_item_indices, input_mask = None)
         else:
             return self.next_item_prediction(user_indices, item_seq_indices, target_item_indices)
-
     def sample_augmented_items(self,sparse_matrix):
         indices = sparse_matrix._indices()
         row_count = sparse_matrix.size(0)
@@ -329,7 +317,6 @@ class PROPOSED2(nn.Module):
         
         # Assign the sampled column indices to the correct rows in the samples tensor
         samples[unique_rows] = sampled_column_indices
-
         return samples
     
     def sampled_ce_loss(self, scores):
@@ -346,13 +333,10 @@ class PROPOSED2(nn.Module):
         n, m = x.shape
         assert n == m
         return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
-
     def loss(self, user_indices, item_seq_indices, pos_item_indices, neg_item_indices):
         
-
         '''
         compute loss
-
         :param torch.LongTensor (B) user_indices:
         :param torch.LongTensor (B x L) item_seq_indices:
         :param torch.LongTensor (B x 1) pos_item_indices:
@@ -369,7 +353,6 @@ class PROPOSED2(nn.Module):
         distill_loss = torch.cuda.DoubleTensor()
         aug_amip_loss = torch.cuda.DoubleTensor()
         mip_loss = torch.cuda.DoubleTensor()
-
         
         pad_filter = (item_seq_indices.sum(-1)!=0)
         item_seq_indices = item_seq_indices[pad_filter]
@@ -438,9 +421,8 @@ class PROPOSED2(nn.Module):
         rep4next_f = self.get_task_contextualized_rep(rep4next_tgt, rep4next)
         tgt_next = self.V(next_tgt_item_indices)[loss_mask_next]
         
-        rep4bn = self.dropout_layer(self.layer_norm2(self.lin(self.gate(rep4next_tgt))))
+        rep4bn = self.dropout_layer(self.layer_norm2(self.lin(self.gate(rep4next_tgt))+rep4next_tgt))
         
-
         score_next = rep4next_f.bmm(tgt_next.permute([0,2,1])).squeeze(1) #[*,1+N]        
         amip_l1_loss = torch.cat((amip_l1_loss, self.sampled_ce_loss(score_next)), 0)
         mip_score = rep4bn.bmm(tgt_next.permute([0,2,1])).squeeze(1)
@@ -453,7 +435,6 @@ class PROPOSED2(nn.Module):
         
         score_next = rep4next_f.bmm(tgt_next.permute([0,2,1])).squeeze(1) #[*,1+N]        
         amip_l2_loss = torch.cat((amip_l2_loss, self.sampled_ce_loss(score_next)), 0)
-
         #체크하기
         #Get score (prev-token)
         rep4prev = transformer_rep[loss_mask_prev].unsqueeze(1) # [*,1,dims]
